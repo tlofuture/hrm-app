@@ -1,0 +1,6 @@
+{
+  "name": "NexHR - Smart HRM & ESS Platform",
+  "description": "Enterprise Human Resource Management platform with Recruitment, Onboarding, Biometric Attendance (Fingerprint & Eye Scan), Payroll, Leave Management, Performance Appraisal, and Employee Self-Service portal for Mobile and Web.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
