@@ -21,6 +21,8 @@ import {
   Printer,
   X,
   Sparkles,
+  RefreshCw,
+  Database,
 } from 'lucide-react';
 import {
   Employee,
@@ -40,6 +42,8 @@ interface EmployeeSetupPageProps {
   onSaveEmployee: (employee: Employee) => void;
   onDeleteEmployee: (employeeId: string) => void;
   language: 'en' | 'my';
+  onSyncFromTurso?: () => Promise<void>;
+  isSyncingTurso?: boolean;
 }
 
 export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
@@ -51,6 +55,8 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
   onSaveEmployee,
   onDeleteEmployee,
   language,
+  onSyncFromTurso,
+  isSyncingTurso,
 }) => {
   const t = translations[language];
 
@@ -328,13 +334,27 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={handleOpenCreate}
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span>{t.addNewEmployee}</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          {onSyncFromTurso && (
+            <button
+              onClick={() => onSyncFromTurso()}
+              disabled={isSyncingTurso}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg shadow-2xs transition-colors disabled:opacity-50"
+              title="Pull latest employee directory from Turso Cloud Database"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${isSyncingTurso ? 'animate-spin' : ''}`} />
+              <span>{isSyncingTurso ? 'Syncing with Turso...' : 'Sync from Turso Cloud'}</span>
+            </button>
+          )}
+
+          <button
+            onClick={handleOpenCreate}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            <span>{t.addNewEmployee}</span>
+          </button>
+        </div>
       </div>
 
       {/* Metrics Ribbon */}

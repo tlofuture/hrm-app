@@ -29,6 +29,19 @@ import {
   directDeleteEmployeeFromTurso,
   directSaveAttendanceToTurso,
   directSaveUserAccountToTurso,
+  directDeleteUserAccountFromTurso,
+  directSaveDepartmentToTurso,
+  directDeleteDepartmentFromTurso,
+  directSaveDutyShiftToTurso,
+  directDeleteDutyShiftFromTurso,
+  directSavePositionToTurso,
+  directDeletePositionFromTurso,
+  directSaveLeaveTypeToTurso,
+  directDeleteLeaveTypeFromTurso,
+  directSaveBiometricDeviceToTurso,
+  directDeleteBiometricDeviceFromTurso,
+  directSaveSalaryConfigToTurso,
+  fetchAllFromTurso,
 } from './utils/turso';
 import { Header } from './components/common/Header';
 import { BiometricScannerModal } from './components/common/BiometricScannerModal';
@@ -81,17 +94,84 @@ export default function App() {
   const [isMobileMode, setIsMobileMode] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>('overview');
 
+  // Turso Cloud Sync State
+  const [isSyncingTurso, setIsSyncingTurso] = useState(false);
+  const [syncStatusToast, setSyncStatusToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  // Central Sync Engine: Pulls live data from Turso Cloud Database
+  const handleSyncFromTurso = async (silent = false) => {
+    if (!tursoConfig.url || !tursoConfig.authToken) return;
+    try {
+      setIsSyncingTurso(true);
+      const data = await fetchAllFromTurso(tursoConfig.url, tursoConfig.authToken);
+
+      let fetchedCount = 0;
+      if (data.employees && data.employees.length > 0) {
+        setEmployees(data.employees);
+        StorageService.setEmployees(data.employees);
+        fetchedCount = data.employees.length;
+      }
+      if (data.departments && data.departments.length > 0) {
+        setDepartments(data.departments);
+        StorageService.setDepartments(data.departments);
+      }
+      if (data.positions && data.positions.length > 0) {
+        setPositions(data.positions);
+        StorageService.setPositions(data.positions);
+      }
+      if (data.dutyShifts && data.dutyShifts.length > 0) {
+        setDutyShifts(data.dutyShifts);
+        StorageService.setDutyShifts(data.dutyShifts);
+      }
+      if (data.leaveSetupList && data.leaveSetupList.length > 0) {
+        setLeaveSetupList(data.leaveSetupList);
+        StorageService.setLeaveSetup(data.leaveSetupList);
+      }
+      if (data.devices && data.devices.length > 0) {
+        setDevices(data.devices);
+        StorageService.setDevices(data.devices);
+      }
+      if (data.salaryConfig && data.salaryConfig.tiers && data.salaryConfig.tiers.length > 0) {
+        setSalaryConfig(data.salaryConfig);
+        StorageService.setSalaryConfig(data.salaryConfig);
+      }
+      if (data.userAccounts && data.userAccounts.length > 0) {
+        setUserAccounts(data.userAccounts);
+        StorageService.setUserAccounts(data.userAccounts);
+      }
+
+      if (!silent) {
+        setSyncStatusToast({
+          message: `Synced with Turso Cloud: ${fetchedCount} employees & master setup data active!`,
+          type: 'success',
+        });
+        setTimeout(() => setSyncStatusToast(null), 4000);
+      }
+    } catch (err: any) {
+      console.warn('Sync from Turso failed:', err);
+      if (!silent) {
+        setSyncStatusToast({
+          message: `Turso Cloud sync error: ${err.message || String(err)}`,
+          type: 'error',
+        });
+        setTimeout(() => setSyncStatusToast(null), 4000);
+      }
+    } finally {
+      setIsSyncingTurso(false);
+    }
+  };
+
+  // Automatically fetch latest data from Turso Cloud when app mounts (essential for Vercel & cross-device updates)
+  useEffect(() => {
+    if (tursoConfig.url && tursoConfig.authToken) {
+      handleSyncFromTurso(true);
+    }
+  }, []);
+
   // Modals
   const [isBiometricOpen, setIsBiometricOpen] = useState(false);
   const [isEmailDrawerOpen, setIsEmailDrawerOpen] = useState(false);
   const [activePayslipModal, setActivePayslipModal] = useState<PayrollRecord | null>(null);
-
-  // Auto-switch tab if role changes to employee
-  useEffect(() => {
-    if (currentRole === 'employee' && (activeTab === 'recruitment' || activeTab === 'onboarding' || activeTab === 'payroll')) {
-      setActiveTab('ess');
-    }
-  }, [currentRole, activeTab]);
 
   // Handler: Add Attendance from Biometric Terminal
   const handleRecordAttendance = (newRecord: AttendanceRecord) => {
@@ -335,8 +415,17 @@ export default function App() {
 
   // Handler: Update User Accounts
   const handleUpdateUserAccounts = (items: UserAccount[]) => {
+    const deleted = userAccounts.filter((u) => !items.some((i) => i.id === u.id));
     setUserAccounts(items);
     StorageService.setUserAccounts(items);
+    if (tursoConfig.autoSyncEnabled && tursoConfig.url) {
+      deleted.forEach((u) =>
+        directDeleteUserAccountFromTurso(u.id, tursoConfig.url, tursoConfig.authToken).catch(() => {})
+      );
+      items.forEach((u) =>
+        directSaveUserAccountToTurso(u, tursoConfig.url, tursoConfig.authToken).catch(() => {})
+      );
+    }
     // If current user was edited, update currentUser state
     const currentStillExists = items.find((u) => u.id === currentUser.id);
     if (currentStillExists) {
@@ -720,6 +809,8 @@ export default function App() {
                 onSaveEmployee={handleSaveEmployee}
                 onDeleteEmployee={handleDeleteEmployee}
                 language={language}
+                onSyncFromTurso={() => handleSyncFromTurso(false)}
+                isSyncingTurso={isSyncingTurso}
               />
             )}
 
@@ -783,33 +874,81 @@ export default function App() {
               <SetupMenuView
                 departments={departments}
                 onUpdateDepartments={(items) => {
+                  const deleted = departments.filter((d) => !items.some((i) => i.id === d.id));
                   setDepartments(items);
                   StorageService.setDepartments(items);
+                  if (tursoConfig.autoSyncEnabled && tursoConfig.url) {
+                    deleted.forEach((d) =>
+                      directDeleteDepartmentFromTurso(d.id, tursoConfig.url, tursoConfig.authToken).catch(() => {})
+                    );
+                    items.forEach((d) =>
+                      directSaveDepartmentToTurso(d, tursoConfig.url, tursoConfig.authToken).catch(() => {})
+                    );
+                  }
                 }}
                 leaveSetupList={leaveSetupList}
                 onUpdateLeaveSetup={(items) => {
+                  const deleted = leaveSetupList.filter((l) => !items.some((i) => i.id === l.id));
                   setLeaveSetupList(items);
                   StorageService.setLeaveSetup(items);
+                  if (tursoConfig.autoSyncEnabled && tursoConfig.url) {
+                    deleted.forEach((l) =>
+                      directDeleteLeaveTypeFromTurso(l.id, tursoConfig.url, tursoConfig.authToken).catch(() => {})
+                    );
+                    items.forEach((l) =>
+                      directSaveLeaveTypeToTurso(l, tursoConfig.url, tursoConfig.authToken).catch(() => {})
+                    );
+                  }
                 }}
                 dutyShifts={dutyShifts}
                 onUpdateDutyShifts={(items) => {
+                  const deleted = dutyShifts.filter((s) => !items.some((i) => i.id === s.id));
                   setDutyShifts(items);
                   StorageService.setDutyShifts(items);
+                  if (tursoConfig.autoSyncEnabled && tursoConfig.url) {
+                    deleted.forEach((s) =>
+                      directDeleteDutyShiftFromTurso(s.id, tursoConfig.url, tursoConfig.authToken).catch(() => {})
+                    );
+                    items.forEach((s) =>
+                      directSaveDutyShiftToTurso(s, tursoConfig.url, tursoConfig.authToken).catch(() => {})
+                    );
+                  }
                 }}
                 salaryConfig={salaryConfig}
                 onUpdateSalaryConfig={(cfg) => {
                   setSalaryConfig(cfg);
                   StorageService.setSalaryConfig(cfg);
+                  if (tursoConfig.autoSyncEnabled && tursoConfig.url) {
+                    directSaveSalaryConfigToTurso(cfg, tursoConfig.url, tursoConfig.authToken).catch(() => {});
+                  }
                 }}
                 positions={positions}
                 onUpdatePositions={(items) => {
+                  const deleted = positions.filter((p) => !items.some((i) => i.id === p.id));
                   setPositions(items);
                   StorageService.setPositions(items);
+                  if (tursoConfig.autoSyncEnabled && tursoConfig.url) {
+                    deleted.forEach((p) =>
+                      directDeletePositionFromTurso(p.id, tursoConfig.url, tursoConfig.authToken).catch(() => {})
+                    );
+                    items.forEach((p) =>
+                      directSavePositionToTurso(p, tursoConfig.url, tursoConfig.authToken).catch(() => {})
+                    );
+                  }
                 }}
                 devices={devices}
                 onUpdateDevices={(items) => {
+                  const deleted = devices.filter((dev) => !items.some((i) => i.id === dev.id));
                   setDevices(items);
                   StorageService.setDevices(items);
+                  if (tursoConfig.autoSyncEnabled && tursoConfig.url) {
+                    deleted.forEach((dev) =>
+                      directDeleteBiometricDeviceFromTurso(dev.id, tursoConfig.url, tursoConfig.authToken).catch(() => {})
+                    );
+                    items.forEach((dev) =>
+                      directSaveBiometricDeviceToTurso(dev, tursoConfig.url, tursoConfig.authToken).catch(() => {})
+                    );
+                  }
                 }}
                 userAccounts={userAccounts}
                 onUpdateUserAccounts={handleUpdateUserAccounts}
@@ -824,6 +963,8 @@ export default function App() {
                 onboardingCases={onboardingCases}
                 appraisals={appraisals}
                 language={language}
+                onSyncFromTurso={() => handleSyncFromTurso(false)}
+                isSyncingTurso={isSyncingTurso}
               />
             )}
           </div>
@@ -920,6 +1061,23 @@ export default function App() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+      {/* Real-time Turso Cloud Sync Toast Notification */}
+      {syncStatusToast && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-lg border flex items-center gap-2 text-xs font-semibold transition-all duration-300 ${
+            syncStatusToast.type === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 shadow-emerald-500/10'
+              : 'bg-rose-50 text-rose-800 border-rose-200 shadow-rose-500/10'
+          }`}
+        >
+          <span
+            className={`w-2 h-2 rounded-full ${
+              syncStatusToast.type === 'success' ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'
+            }`}
+          />
+          <span>{syncStatusToast.message}</span>
         </div>
       )}
     </div>

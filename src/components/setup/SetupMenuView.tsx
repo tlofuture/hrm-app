@@ -18,12 +18,14 @@ import {
   Search,
   Users,
   Database,
+  RefreshCw,
 } from 'lucide-react';
 import {
   DepartmentSetupItem,
   LeaveSetupItem,
   DutyShiftSetupItem,
   SalarySetupConfig,
+  SalaryGradeTier,
   PositionSetupItem,
   BiometricDeviceSetupItem,
   UserAccount,
@@ -67,6 +69,8 @@ interface SetupMenuViewProps {
   onboardingCases: OnboardingCase[];
   appraisals: AppraisalRecord[];
   language: 'en' | 'my';
+  onSyncFromTurso?: () => Promise<void>;
+  isSyncingTurso?: boolean;
 }
 
 export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
@@ -95,6 +99,8 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
   onboardingCases,
   appraisals,
   language,
+  onSyncFromTurso,
+  isSyncingTurso,
 }) => {
   const t = translations[language];
   const [activeSetupTab, setActiveSetupTab] = useState<
@@ -103,10 +109,29 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
 
   // Modals state
   const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
+  const [editingDeptId, setEditingDeptId] = useState<string | null>(null);
+
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [editingLeaveId, setEditingLeaveId] = useState<string | null>(null);
+
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+  const [editingShiftId, setEditingShiftId] = useState<string | null>(null);
+
   const [isPosModalOpen, setIsPosModalOpen] = useState(false);
+  const [editingPosId, setEditingPosId] = useState<string | null>(null);
+
   const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false);
+  const [editingDevId, setEditingDevId] = useState<string | null>(null);
+
+  // Salary Tier Modal State
+  const [isTierModalOpen, setIsTierModalOpen] = useState(false);
+  const [editingTierGrade, setEditingTierGrade] = useState<string | null>(null);
+  const [tierGrade, setTierGrade] = useState('E1');
+  const [tierTitle, setTierTitle] = useState('');
+  const [tierMinBase, setTierMinBase] = useState(1500000);
+  const [tierMaxBase, setTierMaxBase] = useState(2500000);
+  const [tierTransport, setTierTransport] = useState(100000);
+  const [tierMeal, setTierMeal] = useState(80000);
 
   // Department Form
   const [deptCode, setDeptCode] = useState('');
@@ -151,23 +176,60 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
   const [currentSalaryConfig, setCurrentSalaryConfig] = useState<SalarySetupConfig>(salaryConfig);
   const [salarySavedNotification, setSalarySavedNotification] = useState(false);
 
-  // Handlers
+  // Handlers: Department
+  const handleOpenAddDept = () => {
+    setEditingDeptId(null);
+    setDeptCode('');
+    setDeptName('');
+    setDeptNameMy('');
+    setDeptHead('');
+    setDeptBudget(50000000);
+    setIsDeptModalOpen(true);
+  };
+
+  const handleOpenEditDept = (d: DepartmentSetupItem) => {
+    setEditingDeptId(d.id);
+    setDeptCode(d.code);
+    setDeptName(d.name);
+    setDeptNameMy(d.nameMyanmar);
+    setDeptHead(d.headOfDepartment);
+    setDeptBudget(d.annualBudgetMMK);
+    setIsDeptModalOpen(true);
+  };
+
   const handleAddDepartment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!deptName.trim()) return;
-    const newItem: DepartmentSetupItem = {
-      id: `dept-${Date.now()}`,
-      code: deptCode || `DEPT-${Date.now().toString().slice(-3)}`,
-      name: deptName,
-      nameMyanmar: deptNameMy || deptName,
-      headOfDepartment: deptHead || 'Pending Appointment',
-      headEmail: 'admin@nexhr.com',
-      annualBudgetMMK: Number(deptBudget),
-      totalEmployees: 0,
-      status: 'active',
-    };
-    onUpdateDepartments([...departments, newItem]);
+    if (editingDeptId) {
+      const updated = departments.map((d) =>
+        d.id === editingDeptId
+          ? {
+              ...d,
+              code: deptCode || d.code,
+              name: deptName,
+              nameMyanmar: deptNameMy || deptName,
+              headOfDepartment: deptHead || d.headOfDepartment,
+              annualBudgetMMK: Number(deptBudget),
+            }
+          : d
+      );
+      onUpdateDepartments(updated);
+    } else {
+      const newItem: DepartmentSetupItem = {
+        id: `dept-${Date.now()}`,
+        code: deptCode || `DEPT-${Date.now().toString().slice(-3)}`,
+        name: deptName,
+        nameMyanmar: deptNameMy || deptName,
+        headOfDepartment: deptHead || 'Pending Appointment',
+        headEmail: 'admin@nexhr.com',
+        annualBudgetMMK: Number(deptBudget),
+        totalEmployees: 0,
+        status: 'active',
+      };
+      onUpdateDepartments([...departments, newItem]);
+    }
     setIsDeptModalOpen(false);
+    setEditingDeptId(null);
     setDeptName('');
     setDeptCode('');
   };
@@ -176,23 +238,67 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
     onUpdateDepartments(departments.filter((d) => d.id !== id));
   };
 
+  // Handlers: Leave
+  const handleOpenAddLeave = () => {
+    setEditingLeaveId(null);
+    setLeaveTitle('');
+    setLeaveTitleMy('');
+    setLeaveDays(14);
+    setLeaveIsPaid(true);
+    setLeaveCarry(0);
+    setLeaveMedCert(false);
+    setLeaveDesc('');
+    setIsLeaveModalOpen(true);
+  };
+
+  const handleOpenEditLeave = (lv: LeaveSetupItem) => {
+    setEditingLeaveId(lv.id);
+    setLeaveTitle(lv.title);
+    setLeaveTitleMy(lv.titleMyanmar);
+    setLeaveDays(lv.defaultDays);
+    setLeaveIsPaid(lv.isPaid);
+    setLeaveCarry(lv.carryForwardMaxDays);
+    setLeaveMedCert(lv.requireMedicalCertificate);
+    setLeaveDesc(lv.description);
+    setIsLeaveModalOpen(true);
+  };
+
   const handleAddLeaveRule = (e: React.FormEvent) => {
     e.preventDefault();
     if (!leaveTitle.trim()) return;
-    const newItem: LeaveSetupItem = {
-      id: `lvs-${Date.now()}`,
-      leaveType: leaveTitle.toLowerCase().replace(/\s+/g, '_'),
-      title: leaveTitle,
-      titleMyanmar: leaveTitleMy || leaveTitle,
-      defaultDays: Number(leaveDays),
-      isPaid: leaveIsPaid,
-      carryForwardMaxDays: Number(leaveCarry),
-      requireMedicalCertificate: leaveMedCert,
-      minDaysNotice: 1,
-      description: leaveDesc || 'Official leave policy category.',
-    };
-    onUpdateLeaveSetup([...leaveSetupList, newItem]);
+    if (editingLeaveId) {
+      const updated = leaveSetupList.map((l) =>
+        l.id === editingLeaveId
+          ? {
+              ...l,
+              title: leaveTitle,
+              titleMyanmar: leaveTitleMy || leaveTitle,
+              defaultDays: Number(leaveDays),
+              isPaid: leaveIsPaid,
+              carryForwardMaxDays: Number(leaveCarry),
+              requireMedicalCertificate: leaveMedCert,
+              description: leaveDesc || l.description,
+            }
+          : l
+      );
+      onUpdateLeaveSetup(updated);
+    } else {
+      const newItem: LeaveSetupItem = {
+        id: `lvs-${Date.now()}`,
+        leaveType: leaveTitle.toLowerCase().replace(/\s+/g, '_'),
+        title: leaveTitle,
+        titleMyanmar: leaveTitleMy || leaveTitle,
+        defaultDays: Number(leaveDays),
+        isPaid: leaveIsPaid,
+        carryForwardMaxDays: Number(leaveCarry),
+        requireMedicalCertificate: leaveMedCert,
+        minDaysNotice: 1,
+        description: leaveDesc || 'Official leave policy category.',
+      };
+      onUpdateLeaveSetup([...leaveSetupList, newItem]);
+    }
     setIsLeaveModalOpen(false);
+    setEditingLeaveId(null);
     setLeaveTitle('');
   };
 
@@ -200,25 +306,67 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
     onUpdateLeaveSetup(leaveSetupList.filter((l) => l.id !== id));
   };
 
+  // Handlers: Shift
+  const handleOpenAddShift = () => {
+    setEditingShiftId(null);
+    setShiftCode('');
+    setShiftName('');
+    setShiftStart('08:30');
+    setShiftEnd('17:30');
+    setShiftGrace(15);
+    setShiftNight(false);
+    setIsShiftModalOpen(true);
+  };
+
+  const handleOpenEditShift = (shf: DutyShiftSetupItem) => {
+    setEditingShiftId(shf.id);
+    setShiftCode(shf.shiftCode);
+    setShiftName(shf.name);
+    setShiftStart(shf.startTime);
+    setShiftEnd(shf.endTime);
+    setShiftGrace(shf.gracePeriodMinutes);
+    setShiftNight(shf.isNightShift);
+    setIsShiftModalOpen(true);
+  };
+
   const handleAddShift = (e: React.FormEvent) => {
     e.preventDefault();
     if (!shiftName.trim()) return;
-    const newItem: DutyShiftSetupItem = {
-      id: `shf-${Date.now()}`,
-      shiftCode: shiftCode || `SHIFT-${Date.now().toString().slice(-3)}`,
-      name: shiftName,
-      nameMyanmar: shiftName,
-      startTime: shiftStart,
-      endTime: shiftEnd,
-      gracePeriodMinutes: Number(shiftGrace),
-      breakDurationMinutes: 60,
-      otMinimumMinutes: 30,
-      isNightShift: shiftNight,
-      activeDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-      assignedEmployeesCount: 0,
-    };
-    onUpdateDutyShifts([...dutyShifts, newItem]);
+    if (editingShiftId) {
+      const updated = dutyShifts.map((s) =>
+        s.id === editingShiftId
+          ? {
+              ...s,
+              shiftCode: shiftCode || s.shiftCode,
+              name: shiftName,
+              nameMyanmar: shiftName,
+              startTime: shiftStart,
+              endTime: shiftEnd,
+              gracePeriodMinutes: Number(shiftGrace),
+              isNightShift: shiftNight,
+            }
+          : s
+      );
+      onUpdateDutyShifts(updated);
+    } else {
+      const newItem: DutyShiftSetupItem = {
+        id: `shf-${Date.now()}`,
+        shiftCode: shiftCode || `SHIFT-${Date.now().toString().slice(-3)}`,
+        name: shiftName,
+        nameMyanmar: shiftName,
+        startTime: shiftStart,
+        endTime: shiftEnd,
+        gracePeriodMinutes: Number(shiftGrace),
+        breakDurationMinutes: 60,
+        otMinimumMinutes: 30,
+        isNightShift: shiftNight,
+        activeDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        assignedEmployeesCount: 0,
+      };
+      onUpdateDutyShifts([...dutyShifts, newItem]);
+    }
     setIsShiftModalOpen(false);
+    setEditingShiftId(null);
     setShiftName('');
   };
 
@@ -226,22 +374,66 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
     onUpdateDutyShifts(dutyShifts.filter((s) => s.id !== id));
   };
 
+  // Handlers: Position
+  const handleOpenAddPosition = () => {
+    setEditingPosId(null);
+    setPosCode('');
+    setPosTitle('');
+    setPosTitleMy('');
+    setPosDept(departments[0]?.name || 'Engineering');
+    setPosLevel('Mid');
+    setPosGrade(currentSalaryConfig.tiers[0]?.grade || 'E2');
+    setPosExp(2);
+    setIsPosModalOpen(true);
+  };
+
+  const handleOpenEditPosition = (p: PositionSetupItem) => {
+    setEditingPosId(p.id);
+    setPosCode(p.code);
+    setPosTitle(p.title);
+    setPosTitleMy(p.titleMyanmar);
+    setPosDept(p.department);
+    setPosLevel(p.level);
+    setPosGrade(p.salaryGrade);
+    setPosExp(p.minExperienceYears);
+    setIsPosModalOpen(true);
+  };
+
   const handleAddPosition = (e: React.FormEvent) => {
     e.preventDefault();
     if (!posTitle.trim()) return;
-    const newItem: PositionSetupItem = {
-      id: `pos-${Date.now()}`,
-      code: posCode || `POS-${Date.now().toString().slice(-3)}`,
-      title: posTitle,
-      titleMyanmar: posTitleMy || posTitle,
-      department: posDept,
-      level: posLevel,
-      salaryGrade: posGrade,
-      minExperienceYears: Number(posExp),
-      responsibilities: ['Role deliverables & collaboration'],
-    };
-    onUpdatePositions([...positions, newItem]);
+    if (editingPosId) {
+      const updated = positions.map((p) =>
+        p.id === editingPosId
+          ? {
+              ...p,
+              code: posCode || p.code,
+              title: posTitle,
+              titleMyanmar: posTitleMy || posTitle,
+              department: posDept,
+              level: posLevel,
+              salaryGrade: posGrade,
+              minExperienceYears: Number(posExp),
+            }
+          : p
+      );
+      onUpdatePositions(updated);
+    } else {
+      const newItem: PositionSetupItem = {
+        id: `pos-${Date.now()}`,
+        code: posCode || `POS-${Date.now().toString().slice(-3)}`,
+        title: posTitle,
+        titleMyanmar: posTitleMy || posTitle,
+        department: posDept,
+        level: posLevel,
+        salaryGrade: posGrade,
+        minExperienceYears: Number(posExp),
+        responsibilities: ['Role deliverables & collaboration'],
+      };
+      onUpdatePositions([...positions, newItem]);
+    }
     setIsPosModalOpen(false);
+    setEditingPosId(null);
     setPosTitle('');
   };
 
@@ -249,26 +441,130 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
     onUpdatePositions(positions.filter((p) => p.id !== id));
   };
 
+  // Handlers: Biometric Device
+  const handleOpenAddDevice = () => {
+    setEditingDevId(null);
+    setDevName('');
+    setDevLocation('');
+    setDevIp('192.168.1.110');
+    setDevType('Fingerprint + Retina');
+    setIsDeviceModalOpen(true);
+  };
+
+  const handleOpenEditDevice = (dev: BiometricDeviceSetupItem) => {
+    setEditingDevId(dev.id);
+    setDevName(dev.terminalName);
+    setDevLocation(dev.location);
+    setDevIp(dev.ipAddress);
+    setDevType(dev.deviceType);
+    setIsDeviceModalOpen(true);
+  };
+
   const handleAddDevice = (e: React.FormEvent) => {
     e.preventDefault();
     if (!devName.trim()) return;
-    const newItem: BiometricDeviceSetupItem = {
-      id: `dev-${Date.now()}`,
-      terminalName: devName,
-      location: devLocation || 'Yangon HQ Main Building',
-      ipAddress: devIp,
-      deviceType: devType,
-      status: 'online',
-      geofenceRadiusMeters: 50,
-      lastSyncTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
-    };
-    onUpdateDevices([...devices, newItem]);
+    if (editingDevId) {
+      const updated = devices.map((d) =>
+        d.id === editingDevId
+          ? {
+              ...d,
+              terminalName: devName,
+              location: devLocation || d.location,
+              ipAddress: devIp,
+              deviceType: devType,
+            }
+          : d
+      );
+      onUpdateDevices(updated);
+    } else {
+      const newItem: BiometricDeviceSetupItem = {
+        id: `dev-${Date.now()}`,
+        terminalName: devName,
+        location: devLocation || 'Yangon HQ Main Building',
+        ipAddress: devIp,
+        deviceType: devType,
+        status: 'online',
+        geofenceRadiusMeters: 50,
+        lastSyncTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      };
+      onUpdateDevices([...devices, newItem]);
+    }
     setIsDeviceModalOpen(false);
+    setEditingDevId(null);
     setDevName('');
   };
 
   const handleDeleteDevice = (id: string) => {
     onUpdateDevices(devices.filter((d) => d.id !== id));
+  };
+
+  // Handlers: Salary Grade Tier
+  const handleOpenAddTier = () => {
+    setEditingTierGrade(null);
+    setTierGrade(`E${currentSalaryConfig.tiers.length + 1}`);
+    setTierTitle('');
+    setTierMinBase(1500000);
+    setTierMaxBase(2500000);
+    setTierTransport(100000);
+    setTierMeal(80000);
+    setIsTierModalOpen(true);
+  };
+
+  const handleOpenEditTier = (t: SalaryGradeTier) => {
+    setEditingTierGrade(t.grade);
+    setTierGrade(t.grade);
+    setTierTitle(t.title);
+    setTierMinBase(t.minBaseMMK);
+    setTierMaxBase(t.maxBaseMMK);
+    setTierTransport(t.defaultTransportMMK);
+    setTierMeal(t.defaultMealMMK);
+    setIsTierModalOpen(true);
+  };
+
+  const handleSaveTier = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tierGrade.trim() || !tierTitle.trim()) return;
+    let updatedTiers: SalaryGradeTier[];
+    if (editingTierGrade) {
+      updatedTiers = currentSalaryConfig.tiers.map((t) =>
+        t.grade === editingTierGrade
+          ? {
+              grade: tierGrade.trim().toUpperCase(),
+              title: tierTitle.trim(),
+              minBaseMMK: Number(tierMinBase),
+              maxBaseMMK: Number(tierMaxBase),
+              defaultTransportMMK: Number(tierTransport),
+              defaultMealMMK: Number(tierMeal),
+            }
+          : t
+      );
+    } else {
+      const newTier: SalaryGradeTier = {
+        grade: tierGrade.trim().toUpperCase(),
+        title: tierTitle.trim(),
+        minBaseMMK: Number(tierMinBase),
+        maxBaseMMK: Number(tierMaxBase),
+        defaultTransportMMK: Number(tierTransport),
+        defaultMealMMK: Number(tierMeal),
+      };
+      updatedTiers = [...currentSalaryConfig.tiers, newTier];
+    }
+    const updatedCfg = { ...currentSalaryConfig, tiers: updatedTiers };
+    setCurrentSalaryConfig(updatedCfg);
+    onUpdateSalaryConfig(updatedCfg);
+    setIsTierModalOpen(false);
+    setEditingTierGrade(null);
+  };
+
+  const handleDeleteTier = (grade: string) => {
+    if (currentSalaryConfig.tiers.length <= 1) {
+      alert('Cannot delete the last remaining salary grade tier.');
+      return;
+    }
+    const updatedTiers = currentSalaryConfig.tiers.filter((t) => t.grade !== grade);
+    const updatedCfg = { ...currentSalaryConfig, tiers: updatedTiers };
+    setCurrentSalaryConfig(updatedCfg);
+    onUpdateSalaryConfig(updatedCfg);
   };
 
   const handleSaveSalaryConfig = () => {
@@ -293,6 +589,18 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
             {t.setupMenuSubtitle}
           </p>
         </div>
+
+        {onSyncFromTurso && (
+          <button
+            onClick={() => onSyncFromTurso()}
+            disabled={isSyncingTurso}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg shadow-2xs transition-colors disabled:opacity-50"
+            title="Fetch and sync master setup data from Turso Cloud Database"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${isSyncingTurso ? 'animate-spin' : ''}`} />
+            <span>{isSyncingTurso ? 'Syncing with Turso...' : 'Sync from Turso Cloud'}</span>
+          </button>
+        )}
       </div>
 
       {/* Setup Sub-Navigation Bar */}
@@ -407,7 +715,7 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
               </p>
             </div>
             <button
-              onClick={() => setIsDeptModalOpen(true)}
+              onClick={handleOpenAddDept}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm"
             >
               <Plus className="w-4 h-4" />
@@ -454,13 +762,23 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => handleDeleteDepartment(d.id)}
-                          className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
-                          title="Delete Department"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleOpenEditDept(d)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors"
+                            title="Edit Department Information"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteDepartment(d.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
+                            title="Delete Department"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -484,7 +802,7 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
               </p>
             </div>
             <button
-              onClick={() => setIsLeaveModalOpen(true)}
+              onClick={handleOpenAddLeave}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm"
             >
               <Plus className="w-4 h-4" />
@@ -529,7 +847,15 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
                   </div>
                 </div>
 
-                <div className="pt-2 flex justify-end">
+                <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                  <button
+                    onClick={() => handleOpenEditLeave(lv)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors"
+                    title="Edit Leave Rule"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>Edit</span>
+                  </button>
                   <button
                     onClick={() => handleDeleteLeaveRule(lv.id)}
                     className="text-xs text-slate-400 hover:text-rose-600 transition-colors flex items-center gap-1"
@@ -557,7 +883,7 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
               </p>
             </div>
             <button
-              onClick={() => setIsShiftModalOpen(true)}
+              onClick={handleOpenAddShift}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm"
             >
               <Plus className="w-4 h-4" />
@@ -616,13 +942,23 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
                     ))}
                   </div>
 
-                  <button
-                    onClick={() => handleDeleteShift(shf.id)}
-                    className="text-xs text-slate-400 hover:text-rose-600 transition-colors flex items-center gap-1"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Remove</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleOpenEditShift(shf)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors"
+                      title="Edit Duty Shift Roster"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>Edit</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteShift(shf.id)}
+                      className="text-xs text-slate-400 hover:text-rose-600 transition-colors flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Remove</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -765,9 +1101,21 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
           {/* Salary Grade Bands Table */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h4 className="text-sm font-bold text-slate-900">
-                Corporate Salary Grades &amp; Standard Allowances
-              </h4>
+              <div>
+                <h4 className="text-sm font-bold text-slate-900">
+                  Corporate Salary Grades &amp; Standard Allowances
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Standardized pay ranges, minimum-maximum bases, and default travel/meal perks.
+                </p>
+              </div>
+              <button
+                onClick={handleOpenAddTier}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Grade Tier</span>
+              </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
@@ -779,6 +1127,7 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
                     <th className="py-3 px-4 text-right">Max Base (MMK)</th>
                     <th className="py-3 px-4 text-right">Transport Allowance</th>
                     <th className="py-3 px-4 text-right">Meal Allowance</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -802,6 +1151,25 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
                       <td className="py-3 px-4 text-right font-mono tabular-nums text-emerald-600">
                         +{formatMMK(tier.defaultMealMMK)}
                       </td>
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleOpenEditTier(tier)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors"
+                            title="Edit Salary Tier"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTier(tier.grade)}
+                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
+                            title="Delete Tier"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -824,7 +1192,7 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
               </p>
             </div>
             <button
-              onClick={() => setIsPosModalOpen(true)}
+              onClick={handleOpenAddPosition}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm"
             >
               <Plus className="w-4 h-4" />
@@ -869,13 +1237,23 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
                         {p.minExperienceYears} yrs
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => handleDeletePosition(p.id)}
-                          className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
-                          title="Delete Position"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleOpenEditPosition(p)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors"
+                            title="Edit Job Position"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeletePosition(p.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
+                            title="Delete Position"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -899,7 +1277,7 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
               </p>
             </div>
             <button
-              onClick={() => setIsDeviceModalOpen(true)}
+              onClick={handleOpenAddDevice}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm"
             >
               <Plus className="w-4 h-4" />
@@ -945,12 +1323,22 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
 
                 <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 text-slate-500">
                   <span>Geofence: {dev.geofenceRadiusMeters}m radius</span>
-                  <button
-                    onClick={() => handleDeleteDevice(dev.id)}
-                    className="text-slate-400 hover:text-rose-600 transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleOpenEditDevice(dev)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors"
+                      title="Edit Biometric Terminal"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>Edit</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteDevice(dev.id)}
+                      className="text-slate-400 hover:text-rose-600 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -993,12 +1381,14 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
         />
       )}
 
-      {/* MODAL 1: ADD DEPARTMENT */}
+      {/* MODAL 1: ADD / EDIT DEPARTMENT */}
       {isDeptModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <h3 className="text-sm font-bold text-slate-900">{t.addDepartment}</h3>
+              <h3 className="text-sm font-bold text-slate-900">
+                {editingDeptId ? 'Edit Department Information' : t.addDepartment}
+              </h3>
               <button onClick={() => setIsDeptModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-4 h-4" />
               </button>
@@ -1068,7 +1458,7 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
                   type="submit"
                   className="px-4 py-2 font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg"
                 >
-                  Create Department
+                  {editingDeptId ? 'Update Department' : 'Create Department'}
                 </button>
               </div>
             </form>
@@ -1076,12 +1466,14 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
         </div>
       )}
 
-      {/* MODAL 2: ADD LEAVE RULE */}
+      {/* MODAL 2: ADD / EDIT LEAVE RULE */}
       {isLeaveModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <h3 className="text-sm font-bold text-slate-900">{t.addLeaveType}</h3>
+              <h3 className="text-sm font-bold text-slate-900">
+                {editingLeaveId ? 'Edit Leave Policy' : t.addLeaveType}
+              </h3>
               <button onClick={() => setIsLeaveModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-4 h-4" />
               </button>
@@ -1170,7 +1562,7 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
                   type="submit"
                   className="px-4 py-2 font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg"
                 >
-                  Save Policy
+                  {editingLeaveId ? 'Update Policy' : 'Save Policy'}
                 </button>
               </div>
             </form>
@@ -1178,12 +1570,14 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
         </div>
       )}
 
-      {/* MODAL 3: ADD SHIFT */}
+      {/* MODAL 3: ADD / EDIT SHIFT */}
       {isShiftModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <h3 className="text-sm font-bold text-slate-900">{t.addShift}</h3>
+              <h3 className="text-sm font-bold text-slate-900">
+                {editingShiftId ? 'Edit Duty Shift Roster' : t.addShift}
+              </h3>
               <button onClick={() => setIsShiftModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-4 h-4" />
               </button>
@@ -1262,7 +1656,7 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
                   type="submit"
                   className="px-4 py-2 font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg"
                 >
-                  Add Shift
+                  {editingShiftId ? 'Update Shift' : 'Add Shift'}
                 </button>
               </div>
             </form>
@@ -1270,12 +1664,14 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
         </div>
       )}
 
-      {/* MODAL 4: ADD POSITION */}
+      {/* MODAL 4: ADD / EDIT POSITION */}
       {isPosModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <h3 className="text-sm font-bold text-slate-900">{t.addPosition}</h3>
+              <h3 className="text-sm font-bold text-slate-900">
+                {editingPosId ? 'Edit Job Position Hierarchy' : t.addPosition}
+              </h3>
               <button onClick={() => setIsPosModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-4 h-4" />
               </button>
@@ -1370,7 +1766,7 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
                   type="submit"
                   className="px-4 py-2 font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg"
                 >
-                  Create Position
+                  {editingPosId ? 'Update Position' : 'Create Position'}
                 </button>
               </div>
             </form>
@@ -1378,12 +1774,14 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
         </div>
       )}
 
-      {/* MODAL 5: ADD DEVICE */}
+      {/* MODAL 5: ADD / EDIT BIOMETRIC DEVICE */}
       {isDeviceModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <h3 className="text-sm font-bold text-slate-900">{t.addDevice}</h3>
+              <h3 className="text-sm font-bold text-slate-900">
+                {editingDevId ? 'Edit Biometric Terminal Device' : t.addDevice}
+              </h3>
               <button onClick={() => setIsDeviceModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-4 h-4" />
               </button>
@@ -1445,7 +1843,105 @@ export const SetupMenuView: React.FC<SetupMenuViewProps> = ({
                   type="submit"
                   className="px-4 py-2 font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg"
                 >
-                  Connect Terminal
+                  {editingDevId ? 'Update Terminal' : 'Connect Terminal'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: ADD / EDIT SALARY GRADE TIER */}
+      {isTierModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-900">
+                {editingTierGrade ? `Edit Salary Grade Tier (${editingTierGrade})` : 'Add New Salary Grade Tier'}
+              </h3>
+              <button onClick={() => setIsTierModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveTier} className="p-6 space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Grade Code *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. E5"
+                    value={tierGrade}
+                    onChange={(e) => setTierGrade(e.target.value)}
+                    disabled={Boolean(editingTierGrade)}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold uppercase disabled:bg-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Title Band Designation *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Principal / Lead"
+                    value={tierTitle}
+                    onChange={(e) => setTierTitle(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Min Base Salary (MMK)</label>
+                  <input
+                    type="number"
+                    value={tierMinBase}
+                    onChange={(e) => setTierMinBase(Number(e.target.value))}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Max Base Salary (MMK)</label>
+                  <input
+                    type="number"
+                    value={tierMaxBase}
+                    onChange={(e) => setTierMaxBase(Number(e.target.value))}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-mono"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Default Transport (MMK)</label>
+                  <input
+                    type="number"
+                    value={tierTransport}
+                    onChange={(e) => setTierTransport(Number(e.target.value))}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Default Meal (MMK)</label>
+                  <input
+                    type="number"
+                    value={tierMeal}
+                    onChange={(e) => setTierMeal(Number(e.target.value))}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-mono"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsTierModalOpen(false)}
+                  className="px-4 py-2 font-medium text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg"
+                >
+                  {editingTierGrade ? 'Update Grade Tier' : 'Add Grade Tier'}
                 </button>
               </div>
             </form>

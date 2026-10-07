@@ -106,6 +106,18 @@ export interface Employee {
   educationDegree?: string;
   educationInstitute?: string;
   experienceYears?: number;
+
+  // Photos & Credential Documents
+  licensePhoto?: string; // Driver's license / professional license photo (base64 image data URL)
+  certificatePhotos?: EmployeeCertificate[]; // Degree & training certificate photos
+}
+
+export interface EmployeeCertificate {
+  id: string;
+  title: string;
+  issuingOrganization?: string;
+  issueDate?: string;
+  photoUrl: string; // Base64 image data URL
 }
 
 export interface RecruitmentJob {

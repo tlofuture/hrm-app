@@ -31,6 +31,8 @@ interface HeaderProps {
   userAccounts?: UserAccount[];
   onSelectUser?: (user: UserAccount) => void;
   tursoConnected?: boolean;
+  onSyncFromTurso?: () => Promise<void>;
+  isSyncingTurso?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -49,6 +51,8 @@ export const Header: React.FC<HeaderProps> = ({
   userAccounts = [],
   onSelectUser,
   tursoConnected = true,
+  onSyncFromTurso,
+  isSyncingTurso,
 }) => {
   const t = translations[language];
   const [isUserMenuOpen, setIsUserMenuOpen] = React.useState(false);
@@ -73,11 +77,12 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Zone 2: Navigation Links (Desktop view) */}
+          {/* Zone 2: Navigation Links (Desktop & Responsive view) */}
           {!isMobileMode && (
-            <nav className="hidden lg:flex items-center gap-6 text-xs font-medium text-slate-600">
+            <nav className="hidden md:flex items-center gap-4 lg:gap-5 text-xs font-medium text-slate-600 overflow-x-auto no-scrollbar py-1">
               <button
                 onClick={() => onSelectTab('overview')}
-                className={`py-1 transition-colors ${
+                className={`py-1 shrink-0 transition-colors ${
                   activeTab === 'overview'
                     ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
                     : 'hover:text-slate-900'
@@ -85,53 +90,49 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 {t.navOverview}
               </button>
-              {(currentRole === 'hr_admin' || currentRole === 'super_admin') && (
-                <>
-                  <button
-                    onClick={() => onSelectTab('recruitment')}
-                    className={`py-1 transition-colors ${
-                      activeTab === 'recruitment'
-                        ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
-                        : 'hover:text-slate-900'
-                    }`}
-                  >
-                    {t.navRecruitment}
-                  </button>
-                  <button
-                    onClick={() => onSelectTab('onboarding')}
-                    className={`py-1 transition-colors ${
-                      activeTab === 'onboarding'
-                        ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
-                        : 'hover:text-slate-900'
-                    }`}
-                  >
-                    {t.navOnboarding}
-                  </button>
-                  <button
-                    onClick={() => onSelectTab('employees')}
-                    className={`py-1 transition-colors ${
-                      activeTab === 'employees'
-                        ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
-                        : 'hover:text-slate-900'
-                    }`}
-                  >
-                    {t.navEmployees}
-                  </button>
-                  <button
-                    onClick={() => onSelectTab('payroll')}
-                    className={`py-1 transition-colors ${
-                      activeTab === 'payroll'
-                        ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
-                        : 'hover:text-slate-900'
-                    }`}
-                  >
-                    {t.navPayroll}
-                  </button>
-                </>
-              )}
+              <button
+                onClick={() => onSelectTab('recruitment')}
+                className={`py-1 shrink-0 transition-colors ${
+                  activeTab === 'recruitment'
+                    ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
+                    : 'hover:text-slate-900'
+                }`}
+              >
+                {t.navRecruitment}
+              </button>
+              <button
+                onClick={() => onSelectTab('onboarding')}
+                className={`py-1 shrink-0 transition-colors ${
+                  activeTab === 'onboarding'
+                    ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
+                    : 'hover:text-slate-900'
+                }`}
+              >
+                {t.navOnboarding}
+              </button>
+              <button
+                onClick={() => onSelectTab('employees')}
+                className={`py-1 shrink-0 transition-colors ${
+                  activeTab === 'employees'
+                    ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
+                    : 'hover:text-slate-900'
+                }`}
+              >
+                {t.navEmployees}
+              </button>
+              <button
+                onClick={() => onSelectTab('payroll')}
+                className={`py-1 shrink-0 transition-colors ${
+                  activeTab === 'payroll'
+                    ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
+                    : 'hover:text-slate-900'
+                }`}
+              >
+                {t.navPayroll}
+              </button>
               <button
                 onClick={() => onSelectTab('attendance')}
-                className={`py-1 transition-colors ${
+                className={`py-1 shrink-0 transition-colors ${
                   activeTab === 'attendance'
                     ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
                     : 'hover:text-slate-900'
@@ -141,7 +142,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
               <button
                 onClick={() => onSelectTab('leave')}
-                className={`py-1 transition-colors ${
+                className={`py-1 shrink-0 transition-colors ${
                   activeTab === 'leave'
                     ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
                     : 'hover:text-slate-900'
@@ -151,7 +152,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
               <button
                 onClick={() => onSelectTab('appraisal')}
-                className={`py-1 transition-colors ${
+                className={`py-1 shrink-0 transition-colors ${
                   activeTab === 'appraisal'
                     ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
                     : 'hover:text-slate-900'
@@ -161,7 +162,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
               <button
                 onClick={() => onSelectTab('ess')}
-                className={`py-1 transition-colors ${
+                className={`py-1 shrink-0 transition-colors ${
                   activeTab === 'ess'
                     ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
                     : 'hover:text-slate-900'
@@ -169,18 +170,16 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 {t.navSelfService}
               </button>
-              {(currentRole === 'hr_admin' || currentRole === 'super_admin') && (
-                <button
-                  onClick={() => onSelectTab('setup')}
-                  className={`py-1 transition-colors ${
-                    activeTab === 'setup'
-                      ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
-                      : 'hover:text-slate-900'
-                  }`}
-                >
-                  {t.navSetup}
-                </button>
-              )}
+              <button
+                onClick={() => onSelectTab('setup')}
+                className={`py-1 shrink-0 transition-colors ${
+                  activeTab === 'setup'
+                    ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
+                    : 'hover:text-slate-900'
+                }`}
+              >
+                {t.navSetup}
+              </button>
             </nav>
           )}
 
@@ -248,15 +247,24 @@ export const Header: React.FC<HeaderProps> = ({
               <span>{language === 'en' ? 'MY' : 'EN'}</span>
             </button>
 
-              {/* Turso Cloud Database Status */}
+              {/* Turso Cloud Database Status & Sync Trigger */}
               <button
-                onClick={() => onSelectTab('setup')}
-                className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors shadow-2xs"
-                title="Turso Cloud Database: Direct Cloud Sync Active"
+                onClick={() => {
+                  if (onSyncFromTurso) {
+                    onSyncFromTurso();
+                  } else {
+                    onSelectTab('setup');
+                  }
+                }}
+                disabled={isSyncingTurso}
+                className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
+                title="Turso Cloud Database: Click to Sync Live Data"
               >
-                <Cloud className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="hidden xl:inline font-mono font-bold text-[11px]">Turso DB</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <Cloud className={`w-3.5 h-3.5 text-emerald-600 ${isSyncingTurso ? 'animate-bounce' : ''}`} />
+                <span className="hidden xl:inline font-mono font-bold text-[11px]">
+                  {isSyncingTurso ? 'Syncing...' : 'Turso DB'}
+                </span>
+                <span className={`w-1.5 h-1.5 rounded-full ${tursoConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
               </button>
 
               {/* User Account Profile & Switcher */}
