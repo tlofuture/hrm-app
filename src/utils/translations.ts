@@ -46,6 +46,7 @@ export const translations = {
     tabCompensation: 'Compensation & Bank',
     tabEmergency: 'Emergency & Education',
     tabBiometric: 'Biometric & Access',
+    tabPhotos: 'Photos & Credentials',
 
     // Setup Menu
     setupMenuTitle: 'System Setup & Master Configuration',
@@ -237,6 +238,7 @@ export const translations = {
     tabCompensation: 'လစာ၊ ထောက်ပံ့ကြေးနှင့် ဘဏ်',
     tabEmergency: 'အရေးပေါ်နှင့် ပညာအရည်အချင်း',
     tabBiometric: 'ဇီဝမက်ထရစ်နှင့် လုံခြုံရေး',
+    tabPhotos: 'ဓာတ်ပုံ၊ လိုင်စင်နှင့် လက်မှတ်များ',
 
     // Setup Menu
     setupMenuTitle: 'HRM စနစ် အခြေခံဖွဲ့စည်းပုံနှင့် သတ်မှတ်ချက်များ',

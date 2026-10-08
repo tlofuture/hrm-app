@@ -23,6 +23,11 @@ import {
   Sparkles,
   RefreshCw,
   Database,
+  Upload,
+  Camera,
+  Image as ImageIcon,
+  ZoomIn,
+  FileBadge,
 } from 'lucide-react';
 import {
   Employee,
@@ -30,8 +35,10 @@ import {
   DutyShiftSetupItem,
   PositionSetupItem,
   SalarySetupConfig,
+  EmployeeCertificate,
 } from '../../types';
 import { translations, formatMMK } from '../../utils/translations';
+import { fileToBase64, PRESET_AVATARS } from '../../utils/imageUtils';
 
 interface EmployeeSetupPageProps {
   employees: Employee[];
@@ -69,7 +76,10 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [dossierEmployee, setDossierEmployee] = useState<Employee | null>(null);
-  const [activeFormTab, setActiveFormTab] = useState<'personal' | 'employment' | 'compensation' | 'emergency' | 'biometric'>('personal');
+  const [activeFormTab, setActiveFormTab] = useState<'personal' | 'employment' | 'compensation' | 'emergency' | 'biometric' | 'photos'>('personal');
+
+  // Document & Photo Lightbox Preview Modal State
+  const [previewModalDoc, setPreviewModalDoc] = useState<{ url: string; title: string; subtitle?: string } | null>(null);
 
   // Multi-tab Form State
   // Tab 1: Personal & Demographics
@@ -85,6 +95,12 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
   const [formPersonalEmail, setFormPersonalEmail] = useState('');
   const [formAddress, setFormAddress] = useState('');
   const [formTownship, setFormTownship] = useState('Kamayut, Yangon');
+
+  // Tab 6: Photos & Documents State (Persisted directly in Turso cloud database)
+  const [formAvatar, setFormAvatar] = useState<string>('');
+  const [formLicensePhoto, setFormLicensePhoto] = useState<string>('');
+  const [formCertificates, setFormCertificates] = useState<EmployeeCertificate[]>([]);
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
 
   // Tab 2: Employment & Roster
   const [formEmpId, setFormEmpId] = useState('');
@@ -126,6 +142,68 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
   const [formSecurityPin, setFormSecurityPin] = useState('1234');
   const [formKeycard, setFormKeycard] = useState('RFID-NX-');
 
+  // File Upload Handlers for Photos
+  const handleUploadAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setIsProcessingPhoto(true);
+      const base64 = await fileToBase64(file, 600, 600, 0.85);
+      setFormAvatar(base64);
+    } catch (err) {
+      console.error('Avatar upload failed:', err);
+    } finally {
+      setIsProcessingPhoto(false);
+    }
+  };
+
+  const handleUploadLicense = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setIsProcessingPhoto(true);
+      const base64 = await fileToBase64(file, 1200, 900, 0.85);
+      setFormLicensePhoto(base64);
+    } catch (err) {
+      console.error('License upload failed:', err);
+    } finally {
+      setIsProcessingPhoto(false);
+    }
+  };
+
+  const handleAddCertificate = () => {
+    const newCert: EmployeeCertificate = {
+      id: `cert-${Date.now()}-${formCertificates.length + 1}`,
+      title: '',
+      issuingOrganization: '',
+      issueDate: new Date().toISOString().split('T')[0],
+      photoUrl: '',
+    };
+    setFormCertificates([...formCertificates, newCert]);
+  };
+
+  const handleUpdateCertificate = (id: string, updates: Partial<EmployeeCertificate>) => {
+    setFormCertificates((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, ...updates } : c))
+    );
+  };
+
+  const handleUploadCertPhoto = async (id: string, file: File) => {
+    try {
+      setIsProcessingPhoto(true);
+      const base64 = await fileToBase64(file, 1200, 900, 0.85);
+      handleUpdateCertificate(id, { photoUrl: base64 });
+    } catch (err) {
+      console.error('Certificate photo upload failed:', err);
+    } finally {
+      setIsProcessingPhoto(false);
+    }
+  };
+
+  const handleRemoveCertificate = (id: string) => {
+    setFormCertificates((prev) => prev.filter((c) => c.id !== id));
+  };
+
   // Open Editor for Creating
   const handleOpenCreate = () => {
     setEditingEmployeeId(null);
@@ -143,6 +221,9 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
     setFormPersonalEmail('');
     setFormAddress('No. 12, Pyay Road, Kamayut Township');
     setFormTownship('Yangon');
+    setFormAvatar(PRESET_AVATARS[0].url);
+    setFormLicensePhoto('');
+    setFormCertificates([]);
     setFormDept(departments[0]?.name || 'Engineering');
     setFormRole(positions[0]?.title || 'Software Engineer');
     setFormShift(dutyShifts[0]?.name || 'General Corporate Day Shift');
@@ -194,6 +275,9 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
     setFormPersonalEmail(emp.personalEmail || '');
     setFormAddress(emp.address || '');
     setFormTownship(emp.townshipCity || 'Yangon');
+    setFormAvatar(emp.avatar || PRESET_AVATARS[0].url);
+    setFormLicensePhoto(emp.licensePhoto || '');
+    setFormCertificates(emp.certificatePhotos ? [...emp.certificatePhotos] : []);
     setFormDept(emp.department);
     setFormRole(emp.role);
     setFormShift(emp.assignedShift || dutyShifts[0]?.name || 'General Corporate Day Shift');
@@ -236,8 +320,9 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
 
     const targetId = editingEmployeeId || `emp-${Date.now()}`;
     const targetAvatar =
+      formAvatar ||
       employees.find((e) => e.id === targetId)?.avatar ||
-      '/src/assets/images/avatar_lead_engineer_1791292472793.jpg';
+      PRESET_AVATARS[0].url;
 
     const saved: Employee = {
       id: targetId,
@@ -251,6 +336,8 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
       nrcNumber: formNrc,
       joinDate: formJoinDate,
       avatar: targetAvatar,
+      licensePhoto: formLicensePhoto ? formLicensePhoto : undefined,
+      certificatePhotos: formCertificates,
       baseSalaryMMK: Number(formBaseSalary),
       status: formStatus,
       gender: formGender,
@@ -474,7 +561,35 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
                           className="w-9 h-9 rounded-full object-cover border border-slate-200 bg-slate-100"
                         />
                         <div>
-                          <div className="font-semibold text-slate-900">{emp.name}</div>
+                          <div className="font-semibold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                            <span>{emp.name}</span>
+                            {emp.licensePhoto && (
+                              <button
+                                type="button"
+                                onClick={() => setPreviewModalDoc({
+                                  url: emp.licensePhoto!,
+                                  title: `${emp.name} - Driver's / Professional License`,
+                                  subtitle: `NRC: ${emp.nrcNumber}`
+                                })}
+                                className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                                title="Click to view License Photo"
+                              >
+                                <CreditCard className="w-2.5 h-2.5" />
+                                <span>License ✓</span>
+                              </button>
+                            )}
+                            {emp.certificatePhotos && emp.certificatePhotos.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setDossierEmployee(emp)}
+                                className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 cursor-pointer hover:bg-purple-100"
+                                title={`${emp.certificatePhotos.length} Certificates Attached. Click to view.`}
+                              >
+                                <Award className="w-2.5 h-2.5" />
+                                <span>{emp.certificatePhotos.length} Certs</span>
+                              </button>
+                            )}
+                          </div>
                           <div className="text-[11px] text-slate-400 font-mono">
                             {emp.employeeId} · {emp.nameMyanmar}
                           </div>
@@ -569,7 +684,7 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
             </div>
 
             {/* Sub Tabs within Editor */}
-            <div className="flex items-center gap-1 px-6 py-2 border-b border-slate-200 bg-white overflow-x-auto text-xs font-semibold">
+            <div className="flex items-center gap-1 px-6 py-2 border-b border-slate-200 bg-white overflow-x-auto text-xs font-semibold no-scrollbar">
               <button
                 type="button"
                 onClick={() => setActiveFormTab('personal')}
@@ -615,6 +730,21 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
               >
                 5. {t.tabBiometric}
               </button>
+              <button
+                type="button"
+                onClick={() => setActiveFormTab('photos')}
+                className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                  activeFormTab === 'photos'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+                <span>6. {t.tabPhotos}</span>
+                {(formLicensePhoto || formCertificates.length > 0) && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                )}
+              </button>
             </div>
 
             {/* Form Content */}
@@ -622,6 +752,48 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
               {/* TAB 1: PERSONAL & DEMOGRAPHICS */}
               {activeFormTab === 'personal' && (
                 <div className="space-y-4">
+                  {/* Quick Profile Photo Card */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="relative group w-14 h-14 rounded-full overflow-hidden border-2 border-indigo-200 bg-white shadow-xs shrink-0">
+                        <img
+                          src={formAvatar || PRESET_AVATARS[0].url}
+                          alt="Avatar"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div>
+                        <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                          <span>Employee Profile Photo</span>
+                          <span className="text-[10px] text-emerald-600 font-mono">Turso Sync Ready</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          Upload high-resolution headshot photo or configure in Tab 6.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-semibold shadow-2xs">
+                        <Upload className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Upload Photo</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleUploadAvatar}
+                          className="hidden"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setActiveFormTab('photos')}
+                        className="px-2.5 py-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg font-semibold"
+                      >
+                        More Options &rarr;
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="font-semibold text-slate-700 block mb-1">Full Name (English) *</label>
@@ -1133,6 +1305,329 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
                 </div>
               )}
 
+              {/* TAB 6: PHOTOS & CREDENTIALS (SAVED DIRECTLY TO TURSO DATABASE) */}
+              {activeFormTab === 'photos' && (
+                <div className="space-y-6">
+                  {/* Banner */}
+                  <div className="p-3.5 bg-indigo-50/70 border border-indigo-100 rounded-xl flex items-center justify-between text-indigo-900">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-indigo-600 text-white rounded-lg">
+                        <FileBadge className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-xs">Official Employee Photos &amp; Verified Credentials</div>
+                        <div className="text-[11px] text-indigo-700/80">
+                          Photos and certificates are automatically compressed and saved directly to the Turso SQLite cloud database.
+                        </div>
+                      </div>
+                    </div>
+                    {isProcessingPhoto && (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-indigo-700 font-semibold animate-pulse">
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Processing image...</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Section 1: Employee Portrait / Avatar Photo */}
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-bold text-slate-900 text-xs">
+                        <Camera className="w-4 h-4 text-indigo-600" />
+                        <span>1. Employee Profile Photo (Avatar)</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono">Column: employees.avatar</span>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center gap-4 pt-1">
+                      <div className="relative group w-24 h-24 rounded-2xl overflow-hidden border-2 border-indigo-300 shadow-md bg-white shrink-0">
+                        <img
+                          src={formAvatar || PRESET_AVATARS[0].url}
+                          alt="Employee Headshot"
+                          className="w-full h-full object-cover"
+                        />
+                        <label className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center cursor-pointer transition-opacity text-white text-[10px] font-semibold">
+                          <Upload className="w-4 h-4 mb-0.5" />
+                          <span>Change</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleUploadAvatar}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="flex-1 space-y-2 text-left">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-xs shadow-2xs">
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>Upload Employee Photo</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleUploadAvatar}
+                              className="hidden"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setFormAvatar(PRESET_AVATARS[0].url)}
+                            className="px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg text-xs font-medium"
+                          >
+                            Reset Default
+                          </button>
+                        </div>
+
+                        {/* Quick Presets */}
+                        <div className="pt-1">
+                          <span className="text-[11px] text-slate-500 font-medium block mb-1.5">Or choose from executive headshot presets:</span>
+                          <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                            {PRESET_AVATARS.map((p, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => setFormAvatar(p.url)}
+                                className={`w-8 h-8 rounded-full overflow-hidden border-2 transition-all shrink-0 ${
+                                  formAvatar === p.url ? 'border-indigo-600 ring-2 ring-indigo-200 scale-105' : 'border-slate-200 hover:border-slate-400 opacity-80 hover:opacity-100'
+                                }`}
+                                title={p.label}
+                              >
+                                <img src={p.url} alt={p.label} className="w-full h-full object-cover" />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section 2: Driver's License / Official License Photo */}
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-bold text-slate-900 text-xs">
+                        <CreditCard className="w-4 h-4 text-emerald-600" />
+                        <span>2. Driver's License / Professional License Photo</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono">Column: employees.license_photo</span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-500">
+                      Upload front photo or high-definition scan of the employee's valid Myanmar Driver's License or Professional Regulatory License.
+                    </p>
+
+                    {formLicensePhoto ? (
+                      <div className="flex flex-col sm:flex-row items-center gap-4 p-3 bg-white border border-slate-200 rounded-xl shadow-2xs">
+                        <div
+                          onClick={() => setPreviewModalDoc({
+                            url: formLicensePhoto,
+                            title: `${formName || 'Employee'} - License Photo`,
+                            subtitle: `NRC: ${formNrc || 'N/A'}`
+                          })}
+                          className="relative group w-36 h-24 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 cursor-pointer shrink-0"
+                        >
+                          <img
+                            src={formLicensePhoto}
+                            alt="License preview"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                          <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[11px] font-semibold gap-1 transition-opacity">
+                            <ZoomIn className="w-3.5 h-3.5" />
+                            <span>Preview</span>
+                          </div>
+                        </div>
+
+                        <div className="flex-1 space-y-1.5 text-left">
+                          <div className="flex items-center gap-1.5 text-emerald-600 font-bold text-xs">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>License Photo Attached</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500">
+                            Saved as compressed document credential in Turso database.
+                          </p>
+                          <div className="flex items-center gap-2 pt-1">
+                            <label className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg">
+                              <Upload className="w-3 h-3 text-slate-600" />
+                              <span>Replace</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleUploadLicense}
+                                className="hidden"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => setFormLicensePhoto('')}
+                              className="px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="cursor-pointer border-2 border-dashed border-slate-300 hover:border-indigo-400 bg-white hover:bg-indigo-50/30 p-6 rounded-xl flex flex-col items-center justify-center text-center transition-colors">
+                        <CreditCard className="w-8 h-8 text-slate-400 mb-2" />
+                        <span className="font-bold text-slate-700 text-xs">Upload License Photo</span>
+                        <span className="text-[11px] text-slate-400 mt-0.5">Click or drag &amp; drop PNG, JPG, WEBP (Max 10MB)</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleUploadLicense}
+                          className="hidden"
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Section 3: Academic Degrees & Professional Certificates */}
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-bold text-slate-900 text-xs">
+                        <Award className="w-4 h-4 text-purple-600" />
+                        <span>3. Other Certificates &amp; Diplomas Photos ({formCertificates.length})</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono">Column: employees.certificates_json</span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-500">
+                      Add degrees, graduation certificates, professional accreditations, or training awards. All certificate records and photos insert directly into Turso database.
+                    </p>
+
+                    <div className="space-y-3">
+                      {formCertificates.map((cert, idx) => (
+                        <div
+                          key={cert.id}
+                          className="p-3 bg-white border border-slate-200 rounded-xl shadow-2xs space-y-3"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-xs text-indigo-700">
+                              Certificate #{idx + 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCertificate(cert.id)}
+                              className="text-slate-400 hover:text-rose-600 p-1 rounded-md hover:bg-rose-50"
+                              title="Delete Certificate"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                            <div className="sm:col-span-2">
+                              <label className="font-semibold text-slate-700 block mb-1">
+                                Certificate Title *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="e.g. AWS Certified Solutions Architect, B.C.Sc Degree"
+                                value={cert.title}
+                                onChange={(e) => handleUpdateCertificate(cert.id, { title: e.target.value })}
+                                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="font-semibold text-slate-700 block mb-1">
+                                Issue Date
+                              </label>
+                              <input
+                                type="date"
+                                value={cert.issueDate || ''}
+                                onChange={(e) => handleUpdateCertificate(cert.id, { issueDate: e.target.value })}
+                                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono"
+                              />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="font-semibold text-slate-700 block mb-1">
+                                Issuing Organization / University
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. University of Computer Studies Yangon, Amazon Web Services"
+                                value={cert.issuingOrganization || ''}
+                                onChange={(e) => handleUpdateCertificate(cert.id, { issuingOrganization: e.target.value })}
+                                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                              />
+                            </div>
+
+                            {/* Certificate Image picker */}
+                            <div>
+                              <label className="font-semibold text-slate-700 block mb-1">
+                                Certificate Photo
+                              </label>
+                              {cert.photoUrl ? (
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    onClick={() => setPreviewModalDoc({
+                                      url: cert.photoUrl,
+                                      title: cert.title || `Certificate #${idx + 1}`,
+                                      subtitle: cert.issuingOrganization
+                                    })}
+                                    className="relative group w-12 h-10 rounded-lg overflow-hidden border border-slate-200 cursor-pointer shrink-0"
+                                  >
+                                    <img src={cert.photoUrl} alt="" className="w-full h-full object-cover" />
+                                    <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white">
+                                      <ZoomIn className="w-3 h-3" />
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-col gap-0.5">
+                                    <label className="cursor-pointer text-[10px] text-indigo-600 hover:underline font-semibold">
+                                      <span>Replace</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={(e) => {
+                                          const f = e.target.files?.[0];
+                                          if (f) handleUploadCertPhoto(cert.id, f);
+                                        }}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateCertificate(cert.id, { photoUrl: '' })}
+                                      className="text-[10px] text-rose-500 hover:underline text-left font-semibold"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <label className="cursor-pointer inline-flex items-center justify-center gap-1.5 w-full p-2 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 border border-slate-200 rounded-lg text-slate-600 text-xs font-semibold">
+                                  <Upload className="w-3.5 h-3.5" />
+                                  <span>Upload Photo</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => {
+                                      const f = e.target.files?.[0];
+                                      if (f) handleUploadCertPhoto(cert.id, f);
+                                    }}
+                                    className="hidden"
+                                  />
+                                </label>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={handleAddCertificate}
+                        className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold text-indigo-700 bg-white hover:bg-indigo-50 border border-dashed border-indigo-300 rounded-xl w-full justify-center shadow-2xs transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Add Another Certificate / Diploma</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Modal Footer Controls */}
               <div className="flex items-center justify-between pt-4 border-t border-slate-100">
                 <div className="flex gap-2 text-xs">
@@ -1140,7 +1635,7 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const tabs: any[] = ['personal', 'employment', 'compensation', 'emergency', 'biometric'];
+                        const tabs: any[] = ['personal', 'employment', 'compensation', 'emergency', 'biometric', 'photos'];
                         const idx = tabs.indexOf(activeFormTab);
                         if (idx > 0) setActiveFormTab(tabs[idx - 1]);
                       }}
@@ -1149,11 +1644,11 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
                       &larr; Previous Tab
                     </button>
                   )}
-                  {activeFormTab !== 'biometric' && (
+                  {activeFormTab !== 'photos' && (
                     <button
                       type="button"
                       onClick={() => {
-                        const tabs: any[] = ['personal', 'employment', 'compensation', 'emergency', 'biometric'];
+                        const tabs: any[] = ['personal', 'employment', 'compensation', 'emergency', 'biometric', 'photos'];
                         const idx = tabs.indexOf(activeFormTab);
                         if (idx < tabs.length - 1) setActiveFormTab(tabs[idx + 1]);
                       }}
@@ -1314,6 +1809,169 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
                   <div><span className="text-slate-500">Keycard Ref:</span> <span className="font-mono">{dossierEmployee.biometrics.keycardNumber || 'KEY-NX-1002'}</span></div>
                 </div>
               </div>
+
+              {/* Data Grid 4: Official Credentials, License & Certificate Photos */}
+              <div className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <Award className="w-4 h-4 text-indigo-600" />
+                    <span>Official Credentials, License &amp; Certificates</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono">Persisted in Turso Cloud</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* License Photo Card */}
+                  <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-700">Driver's / Professional License</span>
+                      {dossierEmployee.licensePhoto ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
+                          Attached ✓
+                        </span>
+                      ) : (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                          Not Provided
+                        </span>
+                      )}
+                    </div>
+
+                    {dossierEmployee.licensePhoto ? (
+                      <div
+                        onClick={() =>
+                          setPreviewModalDoc({
+                            url: dossierEmployee.licensePhoto!,
+                            title: `${dossierEmployee.name} - Driver's / Professional License`,
+                            subtitle: `NRC: ${dossierEmployee.nrcNumber}`,
+                          })
+                        }
+                        className="relative group cursor-pointer overflow-hidden rounded-lg border border-slate-200 bg-slate-100 h-32 flex items-center justify-center"
+                      >
+                        <img
+                          src={dossierEmployee.licensePhoto}
+                          alt="License"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                        />
+                        <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-semibold gap-1.5">
+                          <ZoomIn className="w-4 h-4" />
+                          <span>Click to Enlarge</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="h-24 rounded-lg border border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 text-xs">
+                        <CreditCard className="w-5 h-5 mb-1 text-slate-300" />
+                        <span>No license photo attached</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Certificates List */}
+                  <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-700">Certificates &amp; Diplomas</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 font-semibold font-mono border border-purple-200">
+                        {dossierEmployee.certificatePhotos?.length || 0} Records
+                      </span>
+                    </div>
+
+                    {dossierEmployee.certificatePhotos && dossierEmployee.certificatePhotos.length > 0 ? (
+                      <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
+                        {dossierEmployee.certificatePhotos.map((cert) => (
+                          <div
+                            key={cert.id}
+                            onClick={() =>
+                              cert.photoUrl &&
+                              setPreviewModalDoc({
+                                url: cert.photoUrl,
+                                title: cert.title || 'Professional Certificate',
+                                subtitle: `${cert.issuingOrganization || ''} ${
+                                  cert.issueDate ? `· ${cert.issueDate}` : ''
+                                }`,
+                              })
+                            }
+                            className={`p-2 rounded-lg border border-slate-200 flex items-center justify-between gap-2.5 transition-colors ${
+                              cert.photoUrl ? 'hover:bg-slate-50 cursor-pointer' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              {cert.photoUrl ? (
+                                <img
+                                  src={cert.photoUrl}
+                                  alt=""
+                                  className="w-8 h-8 rounded object-cover border border-slate-200 shrink-0"
+                                />
+                              ) : (
+                                <div className="w-8 h-8 rounded bg-slate-100 text-slate-400 flex items-center justify-center shrink-0">
+                                  <Award className="w-4 h-4" />
+                                </div>
+                              )}
+                              <div className="truncate">
+                                <div className="font-semibold text-slate-800 text-[11px] truncate">
+                                  {cert.title || 'Certificate'}
+                                </div>
+                                <div className="text-[10px] text-slate-400 truncate">
+                                  {cert.issuingOrganization} {cert.issueDate ? `(${cert.issueDate})` : ''}
+                                </div>
+                              </div>
+                            </div>
+                            {cert.photoUrl && (
+                              <span className="text-[10px] font-semibold text-indigo-600 shrink-0 flex items-center gap-0.5">
+                                <ZoomIn className="w-3 h-3" />
+                                <span>View</span>
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="h-24 rounded-lg border border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 text-xs">
+                        <Award className="w-5 h-5 mb-1 text-slate-300" />
+                        <span>No certificates attached</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LIGHTBOX DOCUMENT ZOOM PREVIEW MODAL */}
+      {previewModalDoc && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-3xl w-full overflow-hidden shadow-2xl border border-slate-200 flex flex-col max-h-[90vh]">
+            <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div>
+                <h4 className="text-sm font-bold text-slate-900">{previewModalDoc.title}</h4>
+                {previewModalDoc.subtitle && (
+                  <p className="text-xs text-slate-500 font-mono mt-0.5">{previewModalDoc.subtitle}</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewModalDoc(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 flex items-center justify-center bg-slate-950 min-h-[300px] flex-1 overflow-auto">
+              <img
+                src={previewModalDoc.url}
+                alt={previewModalDoc.title}
+                className="max-h-[65vh] max-w-full object-contain rounded-lg shadow-md"
+              />
+            </div>
+            <div className="px-5 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+              <span className="text-[11px] text-slate-400">Turso Edge Database Document Storage</span>
+              <button
+                type="button"
+                onClick={() => setPreviewModalDoc(null)}
+                className="px-4 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 shadow-2xs"
+              >
+                Close Preview
+              </button>
             </div>
           </div>
         </div>

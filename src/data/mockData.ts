@@ -48,6 +48,23 @@ export const INITIAL_EMPLOYEES: Employee[] = [
       irisEnrolled: true,
       securityPin: '1234',
     },
+    licensePhoto: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=600&q=80',
+    certificatePhotos: [
+      {
+        id: 'cert-001',
+        title: 'SHRM Senior Certified Professional (SHRM-SCP)',
+        issuingOrganization: 'Society for Human Resource Management',
+        issueDate: '2023-08-15',
+        photoUrl: 'https://images.unsplash.com/photo-1606326608606-aa0b62935f2b?auto=format&fit=crop&w=600&q=80',
+      },
+      {
+        id: 'cert-002',
+        title: 'Executive Master of Business Administration (EMBA)',
+        issuingOrganization: 'Yangon Institute of Economics',
+        issueDate: '2020-11-20',
+        photoUrl: 'https://images.unsplash.com/photo-1546410531-bb4caa6b424d?auto=format&fit=crop&w=600&q=80',
+      },
+    ],
   },
   {
     id: 'emp-002',
@@ -78,6 +95,16 @@ export const INITIAL_EMPLOYEES: Employee[] = [
       irisEnrolled: true,
       securityPin: '7788',
     },
+    licensePhoto: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=600&q=80',
+    certificatePhotos: [
+      {
+        id: 'cert-003',
+        title: 'AWS Certified Solutions Architect – Professional',
+        issuingOrganization: 'Amazon Web Services',
+        issueDate: '2024-02-10',
+        photoUrl: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=600&q=80',
+      },
+    ],
   },
   {
     id: 'emp-003',
