@@ -16,6 +16,12 @@ import {
   FileText,
   Lock,
   Settings,
+  X,
+  Send,
+  Check,
+  AlertCircle,
+  Plus,
+  Clock3,
 } from 'lucide-react';
 import {
   Employee,
@@ -38,7 +44,8 @@ interface MobileAppFrameProps {
   onOpenBiometric: () => void;
   onOpenEmailDrawer: () => void;
   unreadEmailCount: number;
-  onApplyLeave: () => void;
+  onApplyLeave?: () => void;
+  onSubmitLeave?: (newLeave: Omit<LeaveRequest, 'id' | 'appliedDate' | 'status'>) => void;
   onViewPayslip: (record: PayrollRecord) => void;
   onSwitchToWeb: () => void;
   onNavigateSetup?: () => void;
@@ -57,6 +64,7 @@ export const MobileAppFrame: React.FC<MobileAppFrameProps> = ({
   onOpenEmailDrawer,
   unreadEmailCount,
   onApplyLeave,
+  onSubmitLeave,
   onViewPayslip,
   onSwitchToWeb,
   onNavigateSetup,
@@ -64,6 +72,17 @@ export const MobileAppFrame: React.FC<MobileAppFrameProps> = ({
 }) => {
   const t = translations[language];
   const [mobileTab, setMobileTab] = useState<'home' | 'attendance' | 'leaves' | 'payslip' | 'profile'>('home');
+
+  // Mobile Leave Application Modal State
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [leaveType, setLeaveType] = useState<LeaveRequest['leaveType']>('annual');
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [reason, setReason] = useState('');
+  const [emergencyPhone, setEmergencyPhone] = useState(
+    currentEmployee.emergencyContact?.phone || currentEmployee.phone || '+95 9 '
+  );
+  const [mobileToast, setMobileToast] = useState<string | null>(null);
 
   const myAttendance = attendanceRecords.filter((a) => a.employeeId === currentEmployee.employeeId);
   const myPayroll = payrollRecords.filter((p) => p.employeeId === currentEmployee.employeeId);
@@ -81,6 +100,44 @@ export const MobileAppFrame: React.FC<MobileAppFrameProps> = ({
 
   const todayStr = new Date().toISOString().split('T')[0];
   const todayRecord = myAttendance.find((a) => a.date === todayStr);
+
+  // Compute Days Count
+  const computedDays = (() => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return 1;
+    const diff = Math.max(0, end.getTime() - start.getTime());
+    return Math.max(1, Math.round(diff / (1000 * 60 * 60 * 24)) + 1);
+  })();
+
+  const handleSubmitLeave = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (onSubmitLeave) {
+      onSubmitLeave({
+        employeeId: currentEmployee.employeeId,
+        employeeName: currentEmployee.name,
+        department: currentEmployee.department,
+        leaveType,
+        startDate,
+        endDate,
+        daysCount: computedDays,
+        reason: reason.trim() || (language === 'my' ? 'ခွင့်တိုင်ကြားလွှာ' : 'Personal Leave Request'),
+        emergencyPhone: emergencyPhone.trim() || currentEmployee.phone,
+      });
+    } else if (onApplyLeave) {
+      onApplyLeave();
+    }
+
+    setMobileToast(
+      language === 'my'
+        ? 'ခွင့်တောင်းဆိုမှု အောင်မြင်စွာ တင်ပြပြီးပါပြီ (HR သို့ အကြောင်းကြားပြီး)'
+        : 'Leave request submitted! HR notified.'
+    );
+    setTimeout(() => setMobileToast(null), 3500);
+    setIsLeaveModalOpen(false);
+    setMobileTab('leaves');
+    setReason('');
+  };
 
   return (
     <div className="flex flex-col items-center justify-center py-4 px-2 sm:px-4 min-h-[calc(100vh-4rem)] bg-slate-100">
@@ -222,7 +279,7 @@ export const MobileAppFrame: React.FC<MobileAppFrameProps> = ({
                     </button>
 
                     <button
-                      onClick={onApplyLeave}
+                      onClick={() => setIsLeaveModalOpen(true)}
                       className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors text-left"
                     >
                       <div className="flex items-center gap-2.5">
@@ -322,42 +379,140 @@ export const MobileAppFrame: React.FC<MobileAppFrameProps> = ({
             {mobileTab === 'leaves' && (
               <div className="space-y-4 text-xs">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-slate-900 text-sm">{t.leaveBalance}</h3>
+                  <h3 className="font-bold text-slate-900 text-sm">
+                    {language === 'my' ? 'ခွင့်လက်ကျန်နှင့် တောင်းဆိုမှု' : t.leaveBalance}
+                  </h3>
                   <button
-                    onClick={onApplyLeave}
-                    className="px-3 py-1 bg-indigo-600 text-white rounded-lg font-semibold text-[11px]"
+                    onClick={() => setIsLeaveModalOpen(true)}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-lg font-semibold text-[11px] shadow-sm flex items-center gap-1 transition-all"
                   >
-                    Apply
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{language === 'my' ? 'ခွင့်တောင်းမည်' : 'Apply Leave'}</span>
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 bg-white rounded-xl border border-slate-200">
-                    <div className="text-[11px] text-slate-400">Annual Leave</div>
-                    <div className="text-base font-bold font-mono text-slate-900 mt-1">
-                      {myBalance.annualTotal - myBalance.annualUsed} / {myBalance.annualTotal}d
+                {/* Hero Mobile Leave CTA Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsLeaveModalOpen(true)}
+                  className="w-full p-3.5 bg-gradient-to-r from-indigo-600 via-indigo-700 to-slate-900 text-white rounded-2xl shadow-md hover:shadow-lg transition-all flex items-center justify-between text-left group active:scale-[0.98]"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white shrink-0">
+                      <Calendar className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-xs text-white">
+                        {language === 'my' ? 'ခွင့်တောင်းဆိုလွှာ အသစ်တင်မည်' : 'Submit Leave Request'}
+                      </div>
+                      <div className="text-[10px] text-indigo-200">
+                        {language === 'my' ? 'ဖုန်းမှ တိုက်ရိုက် HR ထံ တင်ပြပါ' : 'Instant phone submission with auto HR notification'}
+                      </div>
                     </div>
                   </div>
-                  <div className="p-3 bg-white rounded-xl border border-slate-200">
-                    <div className="text-[11px] text-slate-400">Casual Leave</div>
-                    <div className="text-base font-bold font-mono text-slate-900 mt-1">
-                      {myBalance.casualTotal - myBalance.casualUsed} / {myBalance.casualTotal}d
+                  <ChevronRight className="w-4 h-4 text-white/80 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                </button>
+
+                {/* 4-Grid Leave Balance Summary */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500">
+                      <span>Annual Leave</span>
+                      <span className="text-[10px] font-mono text-indigo-600">
+                        {myBalance.annualTotal}d total
+                      </span>
+                    </div>
+                    <div className="text-base font-bold font-mono text-indigo-700 mt-1">
+                      {Math.max(0, myBalance.annualTotal - myBalance.annualUsed)} days left
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500">
+                      <span>Casual Leave</span>
+                      <span className="text-[10px] font-mono text-emerald-600">
+                        {myBalance.casualTotal}d total
+                      </span>
+                    </div>
+                    <div className="text-base font-bold font-mono text-emerald-700 mt-1">
+                      {Math.max(0, myBalance.casualTotal - myBalance.casualUsed)} days left
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500">
+                      <span>Medical Leave</span>
+                      <span className="text-[10px] font-mono text-blue-600">
+                        {myBalance.medicalTotal}d total
+                      </span>
+                    </div>
+                    <div className="text-base font-bold font-mono text-blue-700 mt-1">
+                      {Math.max(0, myBalance.medicalTotal - myBalance.medicalUsed)} days left
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500">
+                      <span>Maternity/Other</span>
+                      <span className="text-[10px] font-mono text-purple-600">
+                        {myBalance.maternityTotal}d
+                      </span>
+                    </div>
+                    <div className="text-base font-bold font-mono text-purple-700 mt-1">
+                      {Math.max(0, myBalance.maternityTotal - myBalance.maternityUsed)} days left
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-xs space-y-2">
-                  <div className="font-semibold text-slate-900 text-xs">Recent Leave Requests</div>
+                {/* History of Requests */}
+                <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-900 text-xs">
+                      {language === 'my' ? 'မကြာသေးမီက ခွင့်တောင်းဆိုချက်များ' : 'Recent Leave History'}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {myLeaves.length} record{myLeaves.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+
                   <div className="space-y-2">
-                    {myLeaves.map((l) => (
-                      <div key={l.id} className="p-2.5 bg-slate-50 rounded-lg text-[11px] space-y-1">
-                        <div className="flex justify-between font-semibold">
-                          <span className="capitalize">{l.leaveType} ({l.daysCount}d)</span>
-                          <span className="text-amber-600 capitalize">{l.status}</span>
-                        </div>
-                        <div className="text-slate-500 font-mono">{l.startDate} to {l.endDate}</div>
+                    {myLeaves.length === 0 ? (
+                      <div className="p-4 text-center text-[11px] text-slate-400 bg-slate-50 rounded-lg">
+                        {language === 'my' ? 'ခွင့်တောင်းဆိုထားမှု မရှိသေးပါ' : 'No leave requests submitted yet'}
                       </div>
-                    ))}
+                    ) : (
+                      myLeaves.map((l) => (
+                        <div
+                          key={l.id}
+                          className="p-2.5 bg-slate-50/80 hover:bg-slate-100/70 border border-slate-100 rounded-xl text-[11px] space-y-1.5 transition-colors"
+                        >
+                          <div className="flex items-center justify-between font-semibold">
+                            <span className="capitalize text-slate-900 font-medium">
+                              {l.leaveType} Leave · <span className="font-mono text-indigo-600">{l.daysCount}d</span>
+                            </span>
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded-full capitalize font-semibold ${
+                                l.status === 'approved'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : l.status === 'rejected'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {l.status}
+                            </span>
+                          </div>
+                          <div className="text-slate-500 font-mono text-[10px]">
+                            {l.startDate} to {l.endDate}
+                          </div>
+                          {l.reason && (
+                            <div className="text-slate-600 italic text-[10px] truncate">
+                              "{l.reason}"
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
@@ -522,6 +677,253 @@ export const MobileAppFrame: React.FC<MobileAppFrameProps> = ({
               <span className="text-[10px] mt-0.5">Profile</span>
             </button>
           </div>
+
+          {/* Floating Mobile Notification Toast */}
+          {mobileToast && (
+            <div className="absolute top-16 left-3 right-3 z-50 bg-slate-900/95 text-white p-3.5 rounded-2xl shadow-2xl border border-emerald-500/40 flex items-center gap-3 text-xs animate-in fade-in slide-in-from-top-4 duration-200">
+              <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                <Check className="w-4 h-4" />
+              </div>
+              <div className="flex-1 font-medium leading-tight">
+                {mobileToast}
+              </div>
+              <button
+                onClick={() => setMobileToast(null)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {/* IN-APP MOBILE LEAVE APPLICATION MODAL (BOTTOM-SHEET) */}
+          {isLeaveModalOpen && (
+            <div className="absolute inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex flex-col justify-end animate-in fade-in duration-200">
+              <div className="bg-white rounded-t-3xl max-h-[90%] flex flex-col shadow-2xl border-t border-slate-200 overflow-hidden animate-in slide-in-from-bottom duration-300">
+                {/* Modal Top Header */}
+                <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                      <Calendar className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-xs">
+                        {language === 'my' ? 'ခွင့်တောင်းဆိုလွှာ တင်ပြမည်' : 'Submit Leave Request'}
+                      </h4>
+                      <p className="text-[10px] text-slate-500">
+                        {currentEmployee.name} ({currentEmployee.employeeId})
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsLeaveModalOpen(false)}
+                    className="w-7 h-7 rounded-full bg-slate-200/70 text-slate-500 hover:text-slate-700 flex items-center justify-center"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Form Body */}
+                <form onSubmit={handleSubmitLeave} className="p-4 overflow-y-auto space-y-3.5 text-xs flex-1">
+                  {/* Field 1: Leave Type */}
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-slate-700 block text-[11px]">
+                      {language === 'my' ? 'ခွင့်အမျိုးအစား ရွေးချယ်ပါ' : 'Select Leave Category *'}
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {(
+                        [
+                          {
+                            key: 'annual',
+                            label: language === 'my' ? 'လုပ်သက်ခွင့်' : 'Annual',
+                            left: Math.max(0, myBalance.annualTotal - myBalance.annualUsed),
+                          },
+                          {
+                            key: 'casual',
+                            label: language === 'my' ? 'အရေးပေါ်' : 'Casual',
+                            left: Math.max(0, myBalance.casualTotal - myBalance.casualUsed),
+                          },
+                          {
+                            key: 'medical',
+                            label: language === 'my' ? 'ဆေးခွင့်' : 'Medical',
+                            left: Math.max(0, myBalance.medicalTotal - myBalance.medicalUsed),
+                          },
+                          {
+                            key: 'maternity',
+                            label: language === 'my' ? 'မီးဖွားခွင့်' : 'Maternity',
+                            left: Math.max(0, myBalance.maternityTotal - myBalance.maternityUsed),
+                          },
+                          {
+                            key: 'unpaid',
+                            label: language === 'my' ? 'လစာမဲ့ခွင့်' : 'Unpaid',
+                            left: null,
+                          },
+                        ] as const
+                      ).map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => setLeaveType(item.key as any)}
+                          className={`p-2 rounded-xl border text-center transition-all ${
+                            leaveType === item.key
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <div className="font-semibold text-[11px] truncate">{item.label}</div>
+                          {item.left !== null && (
+                            <div
+                              className={`text-[9px] mt-0.5 ${
+                                leaveType === item.key ? 'text-indigo-200' : 'text-slate-400'
+                              }`}
+                            >
+                              {item.left}d left
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Field 2: Date Range */}
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-700 text-[11px]">
+                        {language === 'my' ? 'ခွင့်ကာလ (ရက်စွဲ)' : 'Date Range & Duration'}
+                      </span>
+                      <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 font-bold rounded-md text-[10px] font-mono">
+                        {computedDays} {computedDays === 1 ? 'Day' : 'Days'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-[10px] text-slate-500 block mb-1">
+                          {language === 'my' ? 'စတင်မည့်ရက်' : 'Start Date'}
+                        </span>
+                        <input
+                          type="date"
+                          required
+                          value={startDate}
+                          onChange={(e) => setStartDate(e.target.value)}
+                          className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 block mb-1">
+                          {language === 'my' ? 'ပြီးဆုံးမည့်ရက်' : 'End Date'}
+                        </span>
+                        <input
+                          type="date"
+                          required
+                          value={endDate}
+                          min={startDate}
+                          onChange={(e) => setEndDate(e.target.value)}
+                          className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Field 3: Reason with Quick Chips */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="font-semibold text-slate-700 block text-[11px]">
+                        {language === 'my' ? 'ခွင့်ယူရသည့် အကြောင်းအရင်း *' : 'Reason for Leave *'}
+                      </label>
+                      <span className="text-[10px] text-slate-400">Quick Presets</span>
+                    </div>
+
+                    {/* Quick reason chips */}
+                    <div className="flex flex-wrap gap-1 pb-1">
+                      {[
+                        { labelEn: 'Family Matter', labelMy: 'မိသားစုကိစ္စ' },
+                        { labelEn: 'Medical Checkup', labelMy: 'ဆေးခန်းပြရန်' },
+                        { labelEn: 'Annual Vacation', labelMy: 'နှစ်စဉ်အနားယူခွင့်' },
+                        { labelEn: 'Urgent Affair', labelMy: 'အရေးပေါ်ကိစ္စ' },
+                      ].map((chip) => (
+                        <button
+                          key={chip.labelEn}
+                          type="button"
+                          onClick={() =>
+                            setReason(language === 'my' ? chip.labelMy : chip.labelEn)
+                          }
+                          className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full text-[10px] transition-colors"
+                        >
+                          + {language === 'my' ? chip.labelMy : chip.labelEn}
+                        </button>
+                      ))}
+                    </div>
+
+                    <textarea
+                      required
+                      rows={2}
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      placeholder={
+                        language === 'my'
+                          ? 'ခွင့်ယူရသည့် အကြောင်းအရာကို ရေးသားပါ...'
+                          : 'State your reason for taking time off...'
+                      }
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs resize-none focus:bg-white focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Field 4: Emergency Contact Phone */}
+                  <div className="space-y-1">
+                    <label className="font-semibold text-slate-700 block text-[11px]">
+                      {language === 'my' ? 'အရေးပေါ် ဆက်သွယ်ရန် ဖုန်းနံပါတ်' : 'Emergency Contact Phone *'}
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      value={emergencyPhone}
+                      onChange={(e) => setEmergencyPhone(e.target.value)}
+                      placeholder="+95 9 123 456 789"
+                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs"
+                    />
+                  </div>
+
+                  {/* Notice Box */}
+                  <div className="p-2.5 bg-indigo-50/70 border border-indigo-100 rounded-xl text-[10px] text-indigo-800 space-y-0.5">
+                    <div className="font-bold flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-indigo-600" />
+                      <span>
+                        {language === 'my'
+                          ? 'တိုက်ရိုက် အကြောင်းကြားမှု'
+                          : 'Instant Workflow & Notification'}
+                      </span>
+                    </div>
+                    <p className="text-indigo-600/90 leading-tight">
+                      {language === 'my'
+                        ? 'တင်ပြချက်ကို HR မန်နေဂျာ ဒေါ်ခင်သူဇာ ထံသို့ အလိုအလျောက် ပေးပို့မည်ဖြစ်ပြီး Turso Cloud Database သို့ တိုက်ရိုက်သိမ်းဆည်းပါမည်။'
+                        : 'Your manager Daw Khin Thuzar will receive immediate notice and it will be persisted to Turso Cloud Database.'}
+                    </p>
+                  </div>
+
+                  {/* Modal Action Buttons */}
+                  <div className="flex items-center gap-2 pt-1 pb-4">
+                    <button
+                      type="button"
+                      onClick={() => setIsLeaveModalOpen(false)}
+                      className="w-1/3 py-2.5 text-center font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                    >
+                      {language === 'my' ? 'မလုပ်တော့ပါ' : 'Cancel'}
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>
+                        {language === 'my' ? 'ခွင့်တောင်းဆိုလွှာ တင်မည်' : 'Submit Leave Request'}
+                      </span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

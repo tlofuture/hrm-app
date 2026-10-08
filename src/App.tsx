@@ -38,6 +38,7 @@ import {
   directDeletePositionFromTurso,
   directSaveLeaveTypeToTurso,
   directDeleteLeaveTypeFromTurso,
+  directSaveLeaveRequestToTurso,
   directSaveBiometricDeviceToTurso,
   directDeleteBiometricDeviceFromTurso,
   directSaveSalaryConfigToTurso,
@@ -286,6 +287,14 @@ export default function App() {
         </div>
       `,
     });
+
+    // Direct Cloud Save to Turso Database
+    if (tursoConfig.autoSyncEnabled && tursoConfig.url) {
+      directSaveLeaveRequestToTurso(created, tursoConfig.url, tursoConfig.authToken).catch((err) =>
+        console.warn('Background Turso leave sync:', err)
+      );
+    }
+
     setEmails(StorageService.getEmails());
   };
 
@@ -753,6 +762,7 @@ export default function App() {
             onOpenEmailDrawer={() => setIsEmailDrawerOpen(true)}
             unreadEmailCount={emails.length}
             onApplyLeave={() => setActiveTab('leave')}
+            onSubmitLeave={handleApplyLeave}
             onViewPayslip={(record) => setActivePayslipModal(record)}
             onSwitchToWeb={() => setIsMobileMode(false)}
             onNavigateSetup={() => {

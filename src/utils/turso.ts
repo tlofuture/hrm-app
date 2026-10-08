@@ -1514,6 +1514,49 @@ export async function directSaveAttendanceToTurso(
 }
 
 /**
+ * Directly save or update Leave Request to Turso Cloud.
+ */
+export async function directSaveLeaveRequestToTurso(
+  lv: LeaveRequest,
+  url: string,
+  authToken: string
+): Promise<boolean> {
+  if (!url || !authToken) return false;
+  try {
+    const client = getTursoClient(url, authToken);
+    await client.execute({
+      sql: `
+        INSERT OR REPLACE INTO leave_requests (
+          id, employee_id, employee_name, department, leave_type,
+          start_date, end_date, days_count, reason, applied_date,
+          status, reviewed_by, manager_comment, emergency_phone
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `,
+      args: [
+        lv.id,
+        lv.employeeId,
+        lv.employeeName,
+        lv.department,
+        lv.leaveType,
+        lv.startDate,
+        lv.endDate,
+        lv.daysCount,
+        lv.reason,
+        lv.appliedDate,
+        lv.status,
+        lv.reviewedBy || null,
+        lv.managerComment || null,
+        lv.emergencyPhone,
+      ],
+    });
+    return true;
+  } catch (err) {
+    console.warn('Turso directSaveLeaveRequest error:', err);
+    return false;
+  }
+}
+
+/**
  * Bulk sync all application state to Turso Cloud in transaction batches.
  */
 export async function syncAllLocalToTursoCloud(
