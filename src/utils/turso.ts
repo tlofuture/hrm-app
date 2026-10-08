@@ -16,6 +16,7 @@ import {
   Employee,
   AttendanceRecord,
   LeaveRequest,
+  LeaveBalance,
   PayrollRecord,
   RecruitmentJob,
   Candidate,
@@ -1374,7 +1375,73 @@ export async function fetchUserAccountsFromTurso(
 }
 
 /**
- * Fetch all master data and employees concurrently from Turso Cloud.
+ * Fetch all leave requests directly from Turso Cloud.
+ */
+export async function fetchLeaveRequestsFromTurso(
+  url: string,
+  authToken: string
+): Promise<LeaveRequest[]> {
+  if (!url || !authToken) return [];
+  try {
+    const client = getTursoClient(url, authToken);
+    const rs = await client.execute('SELECT * FROM leave_requests ORDER BY applied_date DESC, created_at DESC;');
+    return rs.rows.map((r: any) => ({
+      id: String(r.id),
+      employeeId: String(r.employee_id),
+      employeeName: String(r.employee_name),
+      department: String(r.department || 'General'),
+      leaveType: (r.leave_type as any) || 'casual',
+      startDate: String(r.start_date),
+      endDate: String(r.end_date),
+      daysCount: Number(r.days_count || 1),
+      reason: String(r.reason || ''),
+      appliedDate: String(r.applied_date || ''),
+      status: (r.status as any) || 'pending',
+      reviewedBy: r.reviewed_by ? String(r.reviewed_by) : undefined,
+      managerComment: r.manager_comment ? String(r.manager_comment) : undefined,
+      emergencyPhone: r.emergency_phone ? String(r.emergency_phone) : '+95 9 791 234 567',
+    }));
+  } catch (err) {
+    console.warn('fetchLeaveRequestsFromTurso error:', err);
+    return [];
+  }
+}
+
+/**
+ * Fetch all leave balances directly from Turso Cloud.
+ */
+export async function fetchLeaveBalancesFromTurso(
+  url: string,
+  authToken: string
+): Promise<Record<string, LeaveBalance>> {
+  if (!url || !authToken) return {};
+  try {
+    const client = getTursoClient(url, authToken);
+    const rs = await client.execute('SELECT * FROM leave_balances;');
+    const result: Record<string, LeaveBalance> = {};
+    for (const r of rs.rows as any[]) {
+      if (r.employee_id) {
+        result[String(r.employee_id)] = {
+          annualTotal: Number(r.annual_total ?? 14),
+          annualUsed: Number(r.annual_used ?? 0),
+          casualTotal: Number(r.casual_total ?? 6),
+          casualUsed: Number(r.casual_used ?? 0),
+          medicalTotal: Number(r.medical_total ?? 10),
+          medicalUsed: Number(r.medical_used ?? 0),
+          maternityTotal: Number(r.maternity_total ?? 0),
+          maternityUsed: Number(r.maternity_used ?? 0),
+        };
+      }
+    }
+    return result;
+  } catch (err) {
+    console.warn('fetchLeaveBalancesFromTurso error:', err);
+    return {};
+  }
+}
+
+/**
+ * Fetch all master data, employees, and leave states concurrently from Turso Cloud.
  */
 export async function fetchAllFromTurso(
   url: string,
@@ -1388,6 +1455,8 @@ export async function fetchAllFromTurso(
   devices: BiometricDeviceSetupItem[];
   salaryConfig: SalarySetupConfig | null;
   userAccounts: UserAccount[];
+  leaves: LeaveRequest[];
+  leaveBalances: Record<string, LeaveBalance>;
 }> {
   const [
     employees,
@@ -1398,6 +1467,8 @@ export async function fetchAllFromTurso(
     devices,
     salaryConfig,
     userAccounts,
+    leaves,
+    leaveBalances,
   ] = await Promise.all([
     fetchEmployeesFromTurso(url, authToken),
     fetchDepartmentsFromTurso(url, authToken),
@@ -1407,6 +1478,8 @@ export async function fetchAllFromTurso(
     fetchBiometricDevicesFromTurso(url, authToken),
     fetchSalaryConfigFromTurso(url, authToken),
     fetchUserAccountsFromTurso(url, authToken),
+    fetchLeaveRequestsFromTurso(url, authToken),
+    fetchLeaveBalancesFromTurso(url, authToken),
   ]);
 
   return {
@@ -1418,6 +1491,8 @@ export async function fetchAllFromTurso(
     devices,
     salaryConfig,
     userAccounts,
+    leaves,
+    leaveBalances,
   };
 }
 
@@ -1557,6 +1632,44 @@ export async function directSaveLeaveRequestToTurso(
 }
 
 /**
+ * Directly save or update an Employee Leave Balance in Turso Cloud.
+ */
+export async function directSaveLeaveBalanceToTurso(
+  employeeId: string,
+  balance: LeaveBalance,
+  url: string,
+  authToken: string
+): Promise<boolean> {
+  if (!url || !authToken || !employeeId) return false;
+  try {
+    const client = getTursoClient(url, authToken);
+    await client.execute({
+      sql: `
+        INSERT OR REPLACE INTO leave_balances (
+          employee_id, annual_total, annual_used, casual_total, casual_used,
+          medical_total, medical_used, maternity_total, maternity_used, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'));
+      `,
+      args: [
+        employeeId,
+        balance.annualTotal ?? 14,
+        balance.annualUsed ?? 0,
+        balance.casualTotal ?? 6,
+        balance.casualUsed ?? 0,
+        balance.medicalTotal ?? 10,
+        balance.medicalUsed ?? 0,
+        balance.maternityTotal ?? 0,
+        balance.maternityUsed ?? 0,
+      ],
+    });
+    return true;
+  } catch (err) {
+    console.warn('Turso directSaveLeaveBalance error:', err);
+    return false;
+  }
+}
+
+/**
  * Bulk sync all application state to Turso Cloud in transaction batches.
  */
 export async function syncAllLocalToTursoCloud(
@@ -1572,6 +1685,7 @@ export async function syncAllLocalToTursoCloud(
     attendance: AttendanceRecord[];
     payroll: PayrollRecord[];
     leaves: LeaveRequest[];
+    leaveBalances?: Record<string, LeaveBalance>;
     jobs: RecruitmentJob[];
     candidates: Candidate[];
     onboardingCases: OnboardingCase[];
@@ -1657,6 +1771,14 @@ export async function syncAllLocalToTursoCloud(
         args: [lv.id, lv.employeeId, lv.employeeName, lv.department, lv.leaveType, lv.startDate, lv.endDate, lv.daysCount, lv.reason, lv.appliedDate, lv.status, lv.reviewedBy || null, lv.managerComment || null, lv.emergencyPhone],
       });
       count++;
+    }
+
+    // Leave Balances
+    if (data.leaveBalances) {
+      for (const [empId, bal] of Object.entries(data.leaveBalances)) {
+        await directSaveLeaveBalanceToTurso(empId, bal, url, authToken);
+        count++;
+      }
     }
 
     return {

@@ -39,6 +39,7 @@ import {
   directSaveLeaveTypeToTurso,
   directDeleteLeaveTypeFromTurso,
   directSaveLeaveRequestToTurso,
+  directSaveLeaveBalanceToTurso,
   directSaveBiometricDeviceToTurso,
   directDeleteBiometricDeviceFromTurso,
   directSaveSalaryConfigToTurso,
@@ -139,6 +140,14 @@ export default function App() {
       if (data.userAccounts && data.userAccounts.length > 0) {
         setUserAccounts(data.userAccounts);
         StorageService.setUserAccounts(data.userAccounts);
+      }
+      if (data.leaves && data.leaves.length > 0) {
+        setLeaves(data.leaves);
+        StorageService.setLeaves(data.leaves);
+      }
+      if (data.leaveBalances && Object.keys(data.leaveBalances).length > 0) {
+        setLeaveBalances(data.leaveBalances);
+        StorageService.setLeaveBalances(data.leaveBalances);
       }
 
       if (!silent) {
@@ -334,6 +343,23 @@ export default function App() {
         balances[leave.employeeId] = b;
         setLeaveBalances(balances);
         StorageService.setLeaveBalances(balances);
+
+        // Direct Cloud Save to Turso Database
+        if (tursoConfig.autoSyncEnabled && tursoConfig.url) {
+          directSaveLeaveBalanceToTurso(leave.employeeId, b, tursoConfig.url, tursoConfig.authToken).catch((err) =>
+            console.warn('Background Turso leave balance sync:', err)
+          );
+        }
+      }
+
+      // Direct Cloud Save of reviewed leave to Turso Database
+      if (tursoConfig.autoSyncEnabled && tursoConfig.url) {
+        const reviewed = updated.find((l) => l.id === leaveId);
+        if (reviewed) {
+          directSaveLeaveRequestToTurso(reviewed, tursoConfig.url, tursoConfig.authToken).catch((err) =>
+            console.warn('Background Turso leave review sync:', err)
+          );
+        }
       }
 
       // Notify employee
@@ -851,6 +877,8 @@ export default function App() {
                 onApplyLeave={handleApplyLeave}
                 onReviewLeave={handleReviewLeave}
                 language={language}
+                onSyncFromTurso={() => handleSyncFromTurso(false)}
+                isSyncingTurso={isSyncingTurso}
               />
             )}
 
