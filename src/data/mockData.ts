@@ -534,7 +534,7 @@ export const INITIAL_LEAVE_REQUESTS: LeaveRequest[] = [
 
 export const INITIAL_LEAVE_BALANCES: Record<string, LeaveBalance> = {
   'NX-1001': {
-    annualTotal: 14,
+    annualTotal: 10,
     annualUsed: 4,
     casualTotal: 6,
     casualUsed: 1,
@@ -544,7 +544,7 @@ export const INITIAL_LEAVE_BALANCES: Record<string, LeaveBalance> = {
     maternityUsed: 0,
   },
   'NX-1002': {
-    annualTotal: 14,
+    annualTotal: 10,
     annualUsed: 2,
     casualTotal: 6,
     casualUsed: 3,
@@ -554,7 +554,7 @@ export const INITIAL_LEAVE_BALANCES: Record<string, LeaveBalance> = {
     maternityUsed: 0,
   },
   'NX-1003': {
-    annualTotal: 14,
+    annualTotal: 10,
     annualUsed: 6,
     casualTotal: 6,
     casualUsed: 3,
@@ -564,7 +564,7 @@ export const INITIAL_LEAVE_BALANCES: Record<string, LeaveBalance> = {
     maternityUsed: 0,
   },
   'NX-1004': {
-    annualTotal: 14,
+    annualTotal: 10,
     annualUsed: 3,
     casualTotal: 6,
     casualUsed: 1,
@@ -574,7 +574,7 @@ export const INITIAL_LEAVE_BALANCES: Record<string, LeaveBalance> = {
     maternityUsed: 0,
   },
   'NX-1005': {
-    annualTotal: 14,
+    annualTotal: 10,
     annualUsed: 1,
     casualTotal: 6,
     casualUsed: 0,
@@ -846,7 +846,7 @@ export const INITIAL_LEAVE_SETUP: LeaveSetupItem[] = [
     leaveType: 'annual',
     title: 'Earned Annual Leave',
     titleMyanmar: 'နှစ်စဉ် လုပ်သက်ခွင့် (Annual)',
-    defaultDays: 14,
+    defaultDays: 10,
     isPaid: true,
     carryForwardMaxDays: 5,
     requireMedicalCertificate: false,

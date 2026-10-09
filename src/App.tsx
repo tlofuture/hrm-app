@@ -879,6 +879,7 @@ export default function App() {
                 language={language}
                 onSyncFromTurso={() => handleSyncFromTurso(false)}
                 isSyncingTurso={isSyncingTurso}
+                leaveSetupList={leaveSetupList}
               />
             )}
 
