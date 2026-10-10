@@ -24,6 +24,7 @@ import {
   AppraisalRecord,
   TursoQueryResult,
 } from '../types';
+import { getEmployeeAvatar } from './imageUtils';
 
 // =========================================================================
 // 1. COMPLETE SQL DDL SCHEMA SCRIPT FOR TURSO DATABASE
@@ -1137,7 +1138,13 @@ export async function fetchEmployeesFromTurso(
       phone: String(r.phone || ''),
       nrcNumber: String(r.nrc_number || ''),
       joinDate: String(r.join_date || ''),
-      avatar: String(r.avatar || ''),
+      avatar: getEmployeeAvatar({
+        avatar: r.avatar ? String(r.avatar) : undefined,
+        employeeId: String(r.employee_id),
+        name: String(r.name),
+        role: String(r.role || 'Staff'),
+        gender: r.gender,
+      }),
       baseSalaryMMK: Number(r.base_salary_mmk || 0),
       status: (r.status as any) || 'active',
       gender: r.gender || undefined,

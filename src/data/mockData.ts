@@ -30,7 +30,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     phone: '+95 9 791 234 567',
     nrcNumber: '12/DAGAMA(N)089123',
     joinDate: '2021-03-15',
-    avatar: '/src/assets/images/avatar_hr_director_1791292459721.jpg',
+    avatar: '/images/avatar_hr_director_1791292459721.jpg',
     baseSalaryMMK: 3500000,
     status: 'active',
     bankAccount: {
@@ -77,7 +77,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     phone: '+95 9 420 112 334',
     nrcNumber: '12/BAHANA(N)145290',
     joinDate: '2022-06-01',
-    avatar: '/src/assets/images/avatar_lead_engineer_1791292472793.jpg',
+    avatar: '/images/avatar_lead_engineer_1791292472793.jpg',
     baseSalaryMMK: 2800000,
     status: 'active',
     bankAccount: {
@@ -117,7 +117,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     phone: '+95 9 970 882 119',
     nrcNumber: '12/LAMATA(N)043812',
     joinDate: '2020-01-10',
-    avatar: '/src/assets/images/avatar_ops_manager_1791292482743.jpg',
+    avatar: '/images/avatar_ops_manager_1791292482743.jpg',
     baseSalaryMMK: 4200000,
     status: 'active',
     bankAccount: {
@@ -147,7 +147,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     phone: '+95 9 780 445 667',
     nrcNumber: '12/MAYAKA(N)210455',
     joinDate: '2023-08-15',
-    avatar: '/src/assets/images/avatar_hr_director_1791292459721.jpg',
+    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=300&q=80',
     baseSalaryMMK: 2100000,
     status: 'active',
     bankAccount: {
@@ -164,6 +164,36 @@ export const INITIAL_EMPLOYEES: Employee[] = [
       fingerprintEnrolled: true,
       irisEnrolled: true,
       securityPin: '4321',
+    },
+  },
+  {
+    id: 'emp-005',
+    employeeId: 'NX-1005',
+    name: 'Daw Thazin Aung Myint',
+    nameMyanmar: 'ဒေါ်သဇင်အောင်မြင့်',
+    role: 'Senior Financial Analyst',
+    department: 'Finance, Tax Compliance & Accounts',
+    email: 'thazinaung@nexhr.com',
+    phone: '+95 9 790 334 556',
+    nrcNumber: '12/DAGAMA(N)071026',
+    joinDate: '2022-11-01',
+    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80',
+    baseSalaryMMK: 2500000,
+    status: 'active',
+    bankAccount: {
+      bankName: 'KBZ Bank',
+      accountNumber: '001-203-9988776',
+      accountName: 'Daw Thazin Aung Myint',
+    },
+    emergencyContact: {
+      name: 'U Aung Myint (Father)',
+      relationship: 'Parent',
+      phone: '+95 9 790 111 222',
+    },
+    biometrics: {
+      fingerprintEnrolled: true,
+      irisEnrolled: true,
+      securityPin: '5566',
     },
   },
 ];
@@ -1582,6 +1612,7 @@ export const INITIAL_USER_ACCOUNTS: UserAccount[] = [
     department: 'Executive Management',
     createdAt: '2026-01-01',
     lastLogin: '2026-10-06 08:30:15',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
     permissions: [
       'all_access',
       'user_management',
@@ -1602,7 +1633,7 @@ export const INITIAL_USER_ACCOUNTS: UserAccount[] = [
     status: 'active',
     createdAt: '2026-01-10',
     lastLogin: '2026-10-06 08:45:00',
-    avatar: '/src/assets/images/avatar_hr_director_1791292459721.jpg',
+    avatar: '/images/avatar_hr_director_1791292459721.jpg',
     permissions: [
       'employee_manage',
       'recruitment_pipeline',
@@ -1625,7 +1656,7 @@ export const INITIAL_USER_ACCOUNTS: UserAccount[] = [
     status: 'active',
     createdAt: '2026-02-01',
     lastLogin: '2026-10-06 08:55:22',
-    avatar: '/src/assets/images/avatar_lead_engineer_1791292472793.jpg',
+    avatar: '/images/avatar_lead_engineer_1791292472793.jpg',
     permissions: [
       'ess_portal',
       'view_my_payslip',
@@ -1645,7 +1676,7 @@ export const INITIAL_USER_ACCOUNTS: UserAccount[] = [
     status: 'active',
     createdAt: '2026-02-15',
     lastLogin: '2026-10-05 17:15:00',
-    avatar: '/src/assets/images/avatar_ops_manager_1791292482701.jpg',
+    avatar: '/images/avatar_ops_manager_1791292482743.jpg',
     permissions: [
       'ess_portal',
       'dept_attendance_view',

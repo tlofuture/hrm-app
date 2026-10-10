@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { AttendanceRecord, Employee, AttendanceMethod } from '../../types';
 import { translations } from '../../utils/translations';
+import { getEmployeeAvatar, handleAvatarError } from '../../utils/imageUtils';
 
 interface AttendanceViewProps {
   attendanceRecords: AttendanceRecord[];
@@ -785,21 +786,13 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
                           </td>
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2.5">
-                              {emp?.avatar ? (
-                                <img
-                                  src={emp.avatar}
-                                  alt={r.employeeName}
-                                  referrerPolicy="no-referrer"
-                                  onError={(e) => {
-                                    (e.target as HTMLElement).style.display = 'none';
-                                  }}
-                                  className="w-7 h-7 rounded-full object-cover border border-slate-200"
-                                />
-                              ) : (
-                                <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
-                                  {r.employeeName.charAt(0)}
-                                </div>
-                              )}
+                              <img
+                                src={getEmployeeAvatar(emp || { employeeId: r.employeeId, name: r.employeeName })}
+                                alt={r.employeeName}
+                                referrerPolicy="no-referrer"
+                                onError={(e) => handleAvatarError(e, emp || { employeeId: r.employeeId, name: r.employeeName })}
+                                className="w-7 h-7 rounded-full object-cover border border-slate-200"
+                              />
                               <div>
                                 <div className="font-semibold text-slate-900 leading-tight">
                                   {r.employeeName}
@@ -946,21 +939,13 @@ export const AttendanceView: React.FC<AttendanceViewProps> = ({
           <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-5 border-b border-slate-100">
               <div className="flex items-center gap-4">
-                {selectedEmployee.avatar ? (
-                  <img
-                    src={selectedEmployee.avatar}
-                    alt={selectedEmployee.name}
-                    referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
-                    className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-100 shadow-xs"
-                  />
-                ) : (
-                  <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xl shadow-xs">
-                    {selectedEmployee.name.charAt(0)}
-                  </div>
-                )}
+                <img
+                  src={getEmployeeAvatar(selectedEmployee)}
+                  alt={selectedEmployee.name}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => handleAvatarError(e, selectedEmployee)}
+                  className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-100 shadow-xs"
+                />
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-lg font-bold text-slate-900">

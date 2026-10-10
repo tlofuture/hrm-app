@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { Language, UserRole, UserAccount } from '../../types';
 import { translations } from '../../utils/translations';
+import { getEmployeeAvatar } from '../../utils/imageUtils';
 
 interface HeaderProps {
   currentRole: UserRole;
@@ -205,18 +206,20 @@ export const Header: React.FC<HeaderProps> = ({
                 className="flex items-center gap-2 p-1 pl-2 pr-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-all text-left"
               >
                 <div className="w-7 h-7 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs uppercase overflow-hidden shrink-0">
-                  {currentUser?.avatar ? (
-                    <img
-                      src={currentUser.avatar}
-                      alt={currentUser.username}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
-                    />
-                  ) : (
-                    currentUser?.username?.slice(0, 2) || 'AD'
-                  )}
+                  <img
+                    src={getEmployeeAvatar({
+                      avatar: currentUser?.avatar,
+                      name: currentUser?.fullName,
+                      role: currentUser?.role,
+                      employeeId: currentUser?.employeeId,
+                    })}
+                    alt={currentUser?.fullName || 'User'}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src =
+                        'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80';
+                    }}
+                  />
                 </div>
                 <div className="hidden sm:flex flex-col text-left">
                   <span className="text-xs font-bold text-slate-900 leading-tight truncate max-w-[110px]">
@@ -270,11 +273,20 @@ export const Header: React.FC<HeaderProps> = ({
                         }`}
                       >
                         <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-[10px] shrink-0 overflow-hidden">
-                          {u.avatar ? (
-                            <img src={u.avatar} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            u.username.slice(0, 2).toUpperCase()
-                          )}
+                          <img
+                            src={getEmployeeAvatar({
+                              avatar: u.avatar,
+                              name: u.fullName,
+                              role: u.role,
+                              employeeId: u.employeeId,
+                            })}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).src =
+                                'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80';
+                            }}
+                          />
                         </div>
                         <div className="flex-1 truncate">
                           <div className="truncate">{u.fullName}</div>

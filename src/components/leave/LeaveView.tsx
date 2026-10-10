@@ -29,6 +29,7 @@ import {
 import { LeaveRequest, LeaveBalance, Employee, LeaveType, LeaveStatus, LeaveSetupItem } from '../../types';
 import { translations } from '../../utils/translations';
 import { StorageService } from '../../utils/storage';
+import { getEmployeeAvatar, handleAvatarError } from '../../utils/imageUtils';
 
 interface LeaveViewProps {
   leaves: LeaveRequest[];
@@ -2217,13 +2218,10 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
                           <td className="py-2.5 px-3 border-r border-slate-100">
                             <div className="flex items-center gap-2">
                               <img
-                                src={item.employee.avatar}
+                                src={getEmployeeAvatar(item.employee)}
                                 alt={item.employee.name}
                                 className="w-7 h-7 rounded-full object-cover border border-slate-200 bg-slate-100 shrink-0"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src =
-                                    'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(item.employee.name);
-                                }}
+                                onError={(e) => handleAvatarError(e, item.employee)}
                               />
                               <div>
                                 <div className="font-semibold text-slate-900 text-xs flex items-center gap-1">
@@ -2516,13 +2514,10 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
           <div className="p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl shadow-md border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-5">
             <div className="flex items-center gap-4">
               <img
-                src={dossierEmployee.avatar}
+                src={getEmployeeAvatar(dossierEmployee)}
                 alt={dossierEmployee.name}
                 className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-400/50 shadow-md bg-white shrink-0"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src =
-                    'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(dossierEmployee.name);
-                }}
+                onError={(e) => handleAvatarError(e, dossierEmployee)}
               />
               <div className="space-y-1">
                 <div className="flex items-center gap-2">

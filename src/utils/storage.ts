@@ -37,6 +37,7 @@ import {
   INITIAL_BIOMETRIC_DEVICES,
   INITIAL_USER_ACCOUNTS,
 } from '../data/mockData';
+import { getEmployeeAvatar } from './imageUtils';
 
 const DEFAULT_TURSO_CONFIG: TursoDatabaseConfig = {
   url: 'libsql://hrm-database-theinlwinoo.aws-ap-northeast-1.turso.io',
@@ -90,7 +91,18 @@ function safeSet<T>(key: string, val: T): void {
 }
 
 export const StorageService = {
-  getEmployees: (): Employee[] => safeGet(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES),
+  getEmployees: (): Employee[] => {
+    const stored = safeGet<Employee[]>(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES);
+    if (!stored || stored.length === 0) {
+      safeSet(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES);
+      return INITIAL_EMPLOYEES;
+    }
+    // Automatically normalize avatars so they never point to broken /src/ paths on production
+    return stored.map((emp) => ({
+      ...emp,
+      avatar: getEmployeeAvatar(emp),
+    }));
+  },
   setEmployees: (data: Employee[]) => safeSet(STORAGE_KEYS.EMPLOYEES, data),
 
   getJobs: (): RecruitmentJob[] => safeGet(STORAGE_KEYS.JOBS, INITIAL_JOBS),
@@ -152,7 +164,15 @@ export const StorageService = {
   getDevices: (): BiometricDeviceSetupItem[] => safeGet(STORAGE_KEYS.DEVICES, INITIAL_BIOMETRIC_DEVICES),
   setDevices: (data: BiometricDeviceSetupItem[]) => safeSet(STORAGE_KEYS.DEVICES, data),
 
-  getUserAccounts: (): UserAccount[] => safeGet(STORAGE_KEYS.USER_ACCOUNTS, INITIAL_USER_ACCOUNTS),
+  getUserAccounts: (): UserAccount[] => {
+    const list = safeGet(STORAGE_KEYS.USER_ACCOUNTS, INITIAL_USER_ACCOUNTS);
+    return list.map((u) => ({
+      ...u,
+      avatar: u.avatar
+        ? (u.avatar.startsWith('/src/assets/images/') ? u.avatar.replace('/src/assets/images/', '/images/') : u.avatar)
+        : (u.role === 'super_admin' ? 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80' : undefined),
+    }));
+  },
   setUserAccounts: (data: UserAccount[]) => safeSet(STORAGE_KEYS.USER_ACCOUNTS, data),
 
   getTursoConfig: (): TursoDatabaseConfig => safeGet(STORAGE_KEYS.TURSO_CONFIG, DEFAULT_TURSO_CONFIG),
@@ -161,8 +181,13 @@ export const StorageService = {
   getCurrentUser: (): UserAccount => {
     const list = safeGet(STORAGE_KEYS.USER_ACCOUNTS, INITIAL_USER_ACCOUNTS);
     const saved = safeGet<UserAccount | null>(STORAGE_KEYS.CURRENT_USER, null);
-    if (saved && list.some((u) => u.id === saved.id)) return saved;
-    return list[1] || list[0]; // Default Daw Khin Thuzar (HR Admin) or Super Admin
+    const target = (saved && list.some((u) => u.id === saved.id)) ? saved : (list[1] || list[0]);
+    return {
+      ...target,
+      avatar: target.avatar
+        ? (target.avatar.startsWith('/src/assets/images/') ? target.avatar.replace('/src/assets/images/', '/images/') : target.avatar)
+        : (target.role === 'super_admin' ? 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80' : undefined),
+    };
   },
   setCurrentUser: (user: UserAccount) => safeSet(STORAGE_KEYS.CURRENT_USER, user),
 

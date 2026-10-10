@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { AppraisalRecord, Employee } from '../../types';
 import { translations } from '../../utils/translations';
+import { getEmployeeAvatar, handleAvatarError } from '../../utils/imageUtils';
 
 interface AppraisalViewProps {
   appraisals: AppraisalRecord[];

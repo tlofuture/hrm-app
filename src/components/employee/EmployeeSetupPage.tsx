@@ -38,7 +38,7 @@ import {
   EmployeeCertificate,
 } from '../../types';
 import { translations, formatMMK } from '../../utils/translations';
-import { fileToBase64, PRESET_AVATARS } from '../../utils/imageUtils';
+import { fileToBase64, PRESET_AVATARS, getEmployeeAvatar, handleAvatarError } from '../../utils/imageUtils';
 
 interface EmployeeSetupPageProps {
   employees: Employee[];
@@ -551,13 +551,10 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-2.5">
                         <img
-                          src={emp.avatar}
+                          src={getEmployeeAvatar(emp)}
                           alt={emp.name}
                           referrerPolicy="no-referrer"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src =
-                              'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(emp.name);
-                          }}
+                          onError={(e) => handleAvatarError(e, emp)}
                           className="w-9 h-9 rounded-full object-cover border border-slate-200 bg-slate-100"
                         />
                         <div>
@@ -1710,13 +1707,10 @@ export const EmployeeSetupPage: React.FC<EmployeeSetupPageProps> = ({
               <div className="flex items-start justify-between border-b border-slate-200 pb-5">
                 <div className="flex items-center gap-4">
                   <img
-                    src={dossierEmployee.avatar}
+                    src={getEmployeeAvatar(dossierEmployee)}
                     alt={dossierEmployee.name}
                     referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src =
-                        'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(dossierEmployee.name);
-                    }}
+                    onError={(e) => handleAvatarError(e, dossierEmployee)}
                     className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-100 shadow-sm"
                   />
                   <div>
