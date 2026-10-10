@@ -3,6 +3,7 @@ import {
   X,
   Fingerprint,
   Eye,
+  Smartphone,
   CheckCircle2,
   AlertCircle,
   MapPin,
@@ -11,6 +12,8 @@ import {
   Camera,
   RefreshCw,
   User,
+  Navigation,
+  ShieldCheck,
 } from 'lucide-react';
 import { Employee, AttendanceMethod, AttendanceRecord } from '../../types';
 import { translations } from '../../utils/translations';
@@ -25,6 +28,8 @@ interface BiometricScannerModalProps {
   onClose: () => void;
   employees: Employee[];
   selectedEmployeeId?: string;
+  defaultMethod?: AttendanceMethod;
+  defaultAction?: 'clock_in' | 'clock_out';
   onRecordAttendance: (record: AttendanceRecord) => void;
   language: 'en' | 'my';
 }
@@ -34,12 +39,14 @@ export const BiometricScannerModal: React.FC<BiometricScannerModalProps> = ({
   onClose,
   employees,
   selectedEmployeeId,
+  defaultMethod,
+  defaultAction,
   onRecordAttendance,
   language,
 }) => {
   const t = translations[language];
-  const [method, setMethod] = useState<AttendanceMethod>('fingerprint');
-  const [actionType, setActionType] = useState<'clock_in' | 'clock_out'>('clock_in');
+  const [method, setMethod] = useState<AttendanceMethod>(defaultMethod || 'fingerprint');
+  const [actionType, setActionType] = useState<'clock_in' | 'clock_out'>(defaultAction || 'clock_in');
   const [currentEmpId, setCurrentEmpId] = useState<string>(
     selectedEmployeeId || employees[0]?.employeeId || 'NX-1002'
   );
@@ -55,6 +62,15 @@ export const BiometricScannerModal: React.FC<BiometricScannerModalProps> = ({
       setCurrentEmpId(selectedEmployeeId);
     }
   }, [selectedEmployeeId]);
+
+  useEffect(() => {
+    if (defaultMethod) {
+      setMethod(defaultMethod);
+    }
+    if (defaultAction) {
+      setActionType(defaultAction);
+    }
+  }, [defaultMethod, defaultAction, isOpen]);
 
   // Handle webcam initialization when camera mode requested for Eye Scan
   useEffect(() => {
@@ -112,6 +128,13 @@ export const BiometricScannerModal: React.FC<BiometricScannerModalProps> = ({
       const timeStr = now.toTimeString().split(' ')[0];
       const dateStr = now.toISOString().split('T')[0];
 
+      let locationStr = 'Yangon HQ - Ground Gate Biometric Terminal';
+      if (method === 'eye_scan') {
+        locationStr = 'Yangon HQ - Level 4 Tech Lab Iris Sensor';
+      } else if (method === 'mobile') {
+        locationStr = 'NexHR Mobile App - Yangon HQ GPS Geofence (18m)';
+      }
+
       const newRecord: AttendanceRecord = {
         id: `att-${Date.now()}`,
         employeeId: currentEmployee.employeeId,
@@ -122,7 +145,7 @@ export const BiometricScannerModal: React.FC<BiometricScannerModalProps> = ({
         clockOutTime: actionType === 'clock_out' ? timeStr : undefined,
         method,
         status: actionType === 'clock_in' && now.getHours() >= 9 && now.getMinutes() > 15 ? 'late' : 'present',
-        location: 'Yangon HQ - Ground Gate Biometric Terminal',
+        location: locationStr,
         overtimeHours: actionType === 'clock_out' && now.getHours() >= 18 ? now.getHours() - 17 : 0,
         biometricConfidence: confScore,
       };
@@ -145,8 +168,10 @@ export const BiometricScannerModal: React.FC<BiometricScannerModalProps> = ({
             <div className="p-1.5 bg-indigo-100 text-indigo-700 rounded-lg">
               {method === 'fingerprint' ? (
                 <Fingerprint className="w-5 h-5" />
-              ) : (
+              ) : method === 'eye_scan' ? (
                 <Eye className="w-5 h-5" />
+              ) : (
+                <Smartphone className="w-5 h-5" />
               )}
             </div>
             <div>
@@ -155,8 +180,8 @@ export const BiometricScannerModal: React.FC<BiometricScannerModalProps> = ({
               </h3>
               <p className="text-[11px] text-slate-500">
                 {language === 'my'
-                  ? 'လုံခြုံရေးအဆင့်မြင့် ဇီဝမက်ထရစ် ရုံးတက်စနစ်'
-                  : 'High-assurance Biometric Verification'}
+                  ? 'လုံခြုံရေးအဆင့်မြင့် ဇီဝမက်ထရစ်နှင့် မိုဘိုင်းလ် ရုံးတက်စနစ်'
+                  : 'High-Assurance Biometric & Mobile Verification'}
               </p>
             </div>
           </div>
@@ -192,21 +217,36 @@ export const BiometricScannerModal: React.FC<BiometricScannerModalProps> = ({
               </select>
             </div>
 
-            {/* Scan Method Switcher (Tabs) */}
-            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
+            {/* Scan Method Switcher (3 Tabs) */}
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setMethod('mobile');
+                  resetScan();
+                }}
+                className={`flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-lg transition-all ${
+                  method === 'mobile'
+                    ? 'bg-white text-indigo-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>{language === 'my' ? 'မိုဘိုင်းလ်' : 'Mobile GPS'}</span>
+              </button>
               <button
                 type="button"
                 onClick={() => {
                   setMethod('fingerprint');
                   resetScan();
                 }}
-                className={`flex items-center justify-center gap-2 py-2 text-xs font-medium rounded-lg transition-all ${
+                className={`flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-lg transition-all ${
                   method === 'fingerprint'
                     ? 'bg-white text-indigo-700 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <Fingerprint className="w-4 h-4" />
+                <Fingerprint className="w-3.5 h-3.5" />
                 <span>{t.fingerprintScan}</span>
               </button>
               <button
@@ -215,13 +255,13 @@ export const BiometricScannerModal: React.FC<BiometricScannerModalProps> = ({
                   setMethod('eye_scan');
                   resetScan();
                 }}
-                className={`flex items-center justify-center gap-2 py-2 text-xs font-medium rounded-lg transition-all ${
+                className={`flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-lg transition-all ${
                   method === 'eye_scan'
                     ? 'bg-white text-indigo-700 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <Eye className="w-4 h-4" />
+                <Eye className="w-3.5 h-3.5" />
                 <span>{t.eyeScan}</span>
               </button>
             </div>
@@ -256,7 +296,73 @@ export const BiometricScannerModal: React.FC<BiometricScannerModalProps> = ({
             {/* High-tech sensor background pattern */}
             <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#6366f1_1px,transparent_1px)] [background-size:16px_16px]" />
 
-            {method === 'fingerprint' ? (
+            {method === 'mobile' ? (
+              /* MOBILE PHONE INTERACTIVE PUNCH */
+              <div
+                onClick={handleStartScan}
+                className="relative flex flex-col items-center justify-between w-64 p-4 rounded-2xl bg-slate-900/90 border border-indigo-500/40 shadow-xl cursor-pointer hover:border-indigo-400 transition-all active:scale-98"
+              >
+                {/* Mobile Screen Top Bar */}
+                <div className="w-full flex items-center justify-between text-[10px] text-slate-400 border-b border-slate-800 pb-2 mb-2">
+                  <span className="font-mono text-slate-300">
+                    {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    GPS Locked
+                  </span>
+                </div>
+
+                {/* Geofence info badge */}
+                <div className="w-full p-2 bg-slate-950/70 rounded-lg border border-slate-800/80 text-[10px] space-y-1 mb-3">
+                  <div className="flex items-center justify-between text-slate-300">
+                    <span className="text-slate-400 flex items-center gap-1">
+                      <Navigation className="w-3 h-3 text-indigo-400" />
+                      HQ Geofence:
+                    </span>
+                    <span className="font-semibold text-emerald-400">Within 18m (50m Limit)</span>
+                  </div>
+                  <div className="text-[9px] text-slate-500 font-mono">
+                    Coord: 16.8409° N, 96.1735° E
+                  </div>
+                </div>
+
+                {/* Central Mobile Biometric Punch Button */}
+                <div
+                  className={`relative flex items-center justify-center w-24 h-24 rounded-full transition-all duration-300 ${
+                    scanState === 'scanning'
+                      ? 'ring-4 ring-indigo-500/80 shadow-lg shadow-indigo-500/40 bg-indigo-950/60'
+                      : scanState === 'success'
+                      ? 'ring-4 ring-emerald-500/80 shadow-lg shadow-emerald-500/40 bg-emerald-950/60'
+                      : 'ring-2 ring-indigo-500/30 hover:ring-indigo-400 bg-indigo-600/20'
+                  }`}
+                >
+                  <div className="flex flex-col items-center justify-center text-center p-2">
+                    <Smartphone
+                      className={`w-8 h-8 transition-colors ${
+                        scanState === 'scanning'
+                          ? 'text-indigo-400 animate-pulse'
+                          : scanState === 'success'
+                          ? 'text-emerald-400'
+                          : 'text-indigo-300'
+                      }`}
+                    />
+                    <span className="text-[9px] font-bold text-white mt-1 uppercase tracking-wide">
+                      {actionType === 'clock_in' ? 'Clock In' : 'Clock Out'}
+                    </span>
+                  </div>
+                  {scanState === 'scanning' && (
+                    <div className="absolute inset-0 rounded-full border-2 border-indigo-400 animate-ping opacity-75" />
+                  )}
+                </div>
+
+                <div className="mt-3 text-[10px] text-slate-400 text-center font-medium">
+                  {language === 'my'
+                    ? 'မိုဘိုင်းလ် GPS ဖြင့် တိုက်ရိုက် Punch နှိပ်ပါ'
+                    : 'Tap screen to punch via Mobile GPS Geofence'}
+                </div>
+              </div>
+            ) : method === 'fingerprint' ? (
               /* FINGERPRINT INTERACTIVE TERMINAL */
               <div
                 onClick={handleStartScan}
@@ -369,7 +475,11 @@ export const BiometricScannerModal: React.FC<BiometricScannerModalProps> = ({
                 >
                   <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
                   <span>
-                    {method === 'fingerprint' ? t.placeFinger : t.alignEye}
+                    {method === 'mobile'
+                      ? (language === 'my' ? 'မိုဘိုင်းလ် GPS ဖြင့် Punch နှိပ်ပါ' : 'Tap mobile screen to punch')
+                      : method === 'fingerprint'
+                      ? t.placeFinger
+                      : t.alignEye}
                   </span>
                 </button>
               )}
@@ -435,7 +545,13 @@ export const BiometricScannerModal: React.FC<BiometricScannerModalProps> = ({
                 <MapPin className="w-3.5 h-3.5 text-slate-400" />
                 {t.verifiedLocation}:
               </span>
-              <span className="text-slate-700 font-medium">Yangon HQ, Gate 01</span>
+              <span className="text-slate-700 font-medium">
+                {method === 'mobile'
+                  ? 'NexHR Mobile App (Yangon HQ Geofence - 18m)'
+                  : method === 'eye_scan'
+                  ? 'Yangon HQ - Level 4 Tech Lab Iris Sensor'
+                  : 'Yangon HQ - Ground Gate Biometric Terminal'}
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-slate-500 flex items-center gap-1">

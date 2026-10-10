@@ -102,7 +102,14 @@ export const StorageService = {
   getOnboardingCases: (): OnboardingCase[] => safeGet(STORAGE_KEYS.ONBOARDING, INITIAL_ONBOARDING_CASES),
   setOnboardingCases: (data: OnboardingCase[]) => safeSet(STORAGE_KEYS.ONBOARDING, data),
 
-  getAttendance: (): AttendanceRecord[] => safeGet(STORAGE_KEYS.ATTENDANCE, INITIAL_ATTENDANCE),
+  getAttendance: (): AttendanceRecord[] => {
+    const stored = safeGet<AttendanceRecord[]>(STORAGE_KEYS.ATTENDANCE, INITIAL_ATTENDANCE);
+    if (!stored || stored.length < 8) {
+      safeSet(STORAGE_KEYS.ATTENDANCE, INITIAL_ATTENDANCE);
+      return INITIAL_ATTENDANCE;
+    }
+    return stored;
+  },
   setAttendance: (data: AttendanceRecord[]) => safeSet(STORAGE_KEYS.ATTENDANCE, data),
 
   getLeaves: (): LeaveRequest[] => safeGet(STORAGE_KEYS.LEAVES, INITIAL_LEAVE_REQUESTS),
@@ -114,7 +121,14 @@ export const StorageService = {
   getPayroll: (): PayrollRecord[] => safeGet(STORAGE_KEYS.PAYROLL, INITIAL_PAYROLL),
   setPayroll: (data: PayrollRecord[]) => safeSet(STORAGE_KEYS.PAYROLL, data),
 
-  getAppraisals: (): AppraisalRecord[] => safeGet(STORAGE_KEYS.APPRAISALS, INITIAL_APPRAISALS),
+  getAppraisals: (): AppraisalRecord[] => {
+    const stored = safeGet<AppraisalRecord[]>(STORAGE_KEYS.APPRAISALS, INITIAL_APPRAISALS);
+    if (!stored || stored.length < 4) {
+      safeSet(STORAGE_KEYS.APPRAISALS, INITIAL_APPRAISALS);
+      return INITIAL_APPRAISALS;
+    }
+    return stored;
+  },
   setAppraisals: (data: AppraisalRecord[]) => safeSet(STORAGE_KEYS.APPRAISALS, data),
 
   getEmails: (): EmailNotification[] => safeGet(STORAGE_KEYS.EMAILS, INITIAL_EMAILS),

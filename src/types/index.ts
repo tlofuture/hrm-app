@@ -182,7 +182,7 @@ export interface OnboardingCase {
   checklist: OnboardingChecklistItem[];
 }
 
-export type AttendanceMethod = 'fingerprint' | 'eye_scan' | 'manual';
+export type AttendanceMethod = 'fingerprint' | 'eye_scan' | 'mobile' | 'manual';
 export type AttendanceStatus = 'present' | 'late' | 'half_day' | 'absent';
 
 export interface AttendanceRecord {
@@ -200,7 +200,7 @@ export interface AttendanceRecord {
   biometricConfidence: number; // e.g. 98.7%
 }
 
-export type LeaveType = 'annual' | 'casual' | 'medical' | 'maternity' | 'unpaid';
+export type LeaveType = 'annual' | 'casual' | 'medical' | 'maternity' | 'paternity' | 'unpaid';
 export type LeaveStatus = 'pending' | 'approved' | 'rejected';
 
 export interface LeaveRequest {

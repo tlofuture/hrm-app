@@ -105,33 +105,6 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
-          {/* Zone 2: Fast Quick Links on Wide screens */}
-          {!isMobileMode && (
-            <div className="hidden lg:flex items-center gap-1 xl:gap-2">
-              {navigationItems.slice(0, 5).map((item) => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      onSelectTab(item.id);
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      isActive
-                        ? 'bg-indigo-50 text-indigo-700 shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
           {/* Zone 3: Actions & Controls */}
           <div className="flex items-center gap-2 sm:gap-2.5">
             {/* Mobile Menu Toggle Button */}
@@ -335,9 +308,9 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Secondary Continuous Module Navigation Bar (Ensures NO menu is lost on desktop, tablet, or mobile) */}
+      {/* Primary Main Menu Navigation Bar */}
       {!isMobileMode && (
-        <div className="bg-slate-50 border-t border-slate-200 px-4 sm:px-6 lg:px-8 py-1.5 overflow-x-auto no-scrollbar">
+        <nav aria-label="Main Navigation" className="bg-slate-50/90 backdrop-blur-xs border-t border-slate-200 px-4 sm:px-6 lg:px-8 py-1.5 overflow-x-auto no-scrollbar shadow-2xs">
           <div className="max-w-7xl mx-auto flex items-center gap-1.5 min-w-max">
             {navigationItems.map((item) => {
               const Icon = item.icon;
@@ -346,7 +319,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   key={item.id}
                   onClick={() => onSelectTab(item.id)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
                     isActive
                       ? 'bg-indigo-600 text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
@@ -358,7 +331,7 @@ export const Header: React.FC<HeaderProps> = ({
               );
             })}
           </div>
-        </div>
+        </nav>
       )}
 
       {/* Mobile Drawer Navigation (When hamburger button is clicked) */}

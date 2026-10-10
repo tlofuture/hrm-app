@@ -103,6 +103,8 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
 
   // A4 Windows Print Preview Modal State
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [printReportType, setPrintReportType] = useState<'all-summary' | 'all-detailed' | 'individual-detailed'>('all-summary');
+  const [printSelectedEmpId, setPrintSelectedEmpId] = useState<string>(dossierEmpId || employees[0]?.employeeId || 'NX-1002');
   const [printScope, setPrintScope] = useState<'all' | 'individual'>('all');
   const [printOrientation, setPrintOrientation] = useState<'landscape' | 'portrait'>('landscape');
   const [printStatusNotice, setPrintStatusNotice] = useState<string | null>(null);
@@ -197,10 +199,29 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
   const allEmployeesReportData = useMemo(() => {
     return employees.map((emp) => {
       const bal = getEmployeeBalance(emp.employeeId);
-      const annualRemaining = Math.max(0, bal.annualTotal - bal.annualUsed);
-      const casualRemaining = Math.max(0, bal.casualTotal - bal.casualUsed);
-      const medicalRemaining = Math.max(0, bal.medicalTotal - bal.medicalUsed);
-      const maternityRemaining = Math.max(0, bal.maternityTotal - bal.maternityUsed);
+      const empApprovedLeaves = leaves.filter((l) => l.employeeId === emp.employeeId && l.status === 'approved');
+
+      const annualRemaining = Math.max(0, annualDays - bal.annualUsed);
+      const casualRemaining = Math.max(0, casualDays - bal.casualUsed);
+      const medicalRemaining = Math.max(0, medicalDays - bal.medicalUsed);
+
+      const maternityApprovedDays = empApprovedLeaves
+        .filter((l) => l.leaveType === 'maternity')
+        .reduce((sum, l) => sum + l.daysCount, 0);
+      const maternityUsed = Math.max(bal.maternityUsed || 0, maternityApprovedDays);
+      const maternityRemaining = Math.max(0, maternityDays - maternityUsed);
+
+      const paternityApprovedDays = empApprovedLeaves
+        .filter((l) => l.leaveType === 'paternity')
+        .reduce((sum, l) => sum + l.daysCount, 0);
+      const paternityUsed = paternityApprovedDays;
+      const paternityRemaining = Math.max(0, paternityDays - paternityUsed);
+
+      const unpaidApprovedDays = empApprovedLeaves
+        .filter((l) => l.leaveType === 'unpaid')
+        .reduce((sum, l) => sum + l.daysCount, 0);
+      const unpaidUsed = unpaidApprovedDays;
+      const unpaidRemaining = Math.max(0, unpaidDays - unpaidUsed);
 
       const totalEntitlement = bal.annualTotal + bal.casualTotal + bal.medicalTotal + (bal.maternityTotal > 0 ? bal.maternityTotal : 0);
       const totalTaken = bal.annualUsed + bal.casualUsed + bal.medicalUsed + bal.maternityUsed;
@@ -209,7 +230,7 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
 
       // Pending Leaves Count for this employee
       const empPendingCount = leaves.filter((l) => l.employeeId === emp.employeeId && l.status === 'pending').length;
-      const empApprovedCount = leaves.filter((l) => l.employeeId === emp.employeeId && l.status === 'approved').length;
+      const empApprovedCount = empApprovedLeaves.length;
 
       return {
         employee: emp,
@@ -217,7 +238,12 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
         annualRemaining,
         casualRemaining,
         medicalRemaining,
+        maternityUsed,
         maternityRemaining,
+        paternityUsed,
+        paternityRemaining,
+        unpaidUsed,
+        unpaidRemaining,
         totalEntitlement,
         totalTaken,
         totalRemaining,
@@ -226,7 +252,7 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
         approvedCount: empApprovedCount,
       };
     });
-  }, [employees, leaveBalances, leaves]);
+  }, [employees, leaveBalances, leaves, annualDays, casualDays, medicalDays, maternityDays, paternityDays, unpaidDays]);
 
   // Filtered Report Data
   const filteredReportData = useMemo(() => {
@@ -366,17 +392,407 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
     setManagerComment('');
   };
 
-  // Generate clean A4 Landscape HTML for All Employees Leave Balance Summary
-  const generateA4PrintHTML = () => {
+  // Selected Print Employee for Individual Detailed Dossier
+  const printEmployee = useMemo(() => {
+    return employees.find((e) => e.employeeId === printSelectedEmpId) || dossierEmployee || employees[0];
+  }, [employees, printSelectedEmpId, dossierEmployee]);
+
+  const printEmployeeBalance = useMemo(() => {
+    return getEmployeeBalance(printEmployee.employeeId);
+  }, [printEmployee]);
+
+  const printEmployeeLeaves = useMemo(() => {
+    return leaves.filter((l) => l.employeeId === printEmployee.employeeId);
+  }, [leaves, printEmployee]);
+
+  // Generate comprehensive A4 Printable HTML for:
+  // 1. 'all-summary': All Employees Leave Balance Summary (A4 Landscape, matching PNG format)
+  // 2. 'all-detailed': All Employees Detailed Leave Report include date (A4 Landscape)
+  // 3. 'individual-detailed': Each Employee Detailed Leave Report include date & balances (A4 Portrait)
+  const generateA4PrintHTML = (
+    reportType: 'all-summary' | 'all-detailed' | 'individual-detailed' = printReportType,
+    targetEmpId: string = printSelectedEmpId
+  ) => {
+    const isLandscape = reportType !== 'individual-detailed';
+    const targetEmp = employees.find((e) => e.employeeId === targetEmpId) || printEmployee;
+    const targetBal = getEmployeeBalance(targetEmp.employeeId);
+    const targetLeaves = leaves.filter((l) => l.employeeId === targetEmp.employeeId);
+
+    const targetMaternityUsed = targetBal.maternityUsed || targetLeaves.filter((l) => l.leaveType === 'maternity' && l.status === 'approved').reduce((s, l) => s + l.daysCount, 0);
+    const targetMaternityRemaining = Math.max(0, maternityDays - targetMaternityUsed);
+    const targetPaternityUsed = targetLeaves.filter((l) => l.leaveType === 'paternity' && l.status === 'approved').reduce((s, l) => s + l.daysCount, 0);
+    const targetPaternityRemaining = Math.max(0, paternityDays - targetPaternityUsed);
+    const targetUnpaidUsed = targetLeaves.filter((l) => l.leaveType === 'unpaid' && l.status === 'approved').reduce((s, l) => s + l.daysCount, 0);
+    const targetUnpaidRemaining = Math.max(0, unpaidDays - targetUnpaidUsed);
+
+    const reportTitle =
+      reportType === 'all-summary'
+        ? 'All Employees Leave Balance Summary'
+        : reportType === 'all-detailed'
+        ? 'All Employees Detailed Leave Applications & Dates Audit Report'
+        : `Individual Employee Leave Dossier & Statement — ${targetEmp.name} (${targetEmp.employeeId})`;
+
+    const reportSubtitle =
+      reportType === 'all-summary'
+        ? 'NexHR Enterprise · Statutory Leave Entitlement & Balance Register'
+        : reportType === 'all-detailed'
+        ? 'NexHR Enterprise · Complete Statutory Leave Register With Detailed Dates & Approvals'
+        : 'NexHR Enterprise · Comprehensive Statutory Leave Ledger, Balance Audit & Historical Date Log';
+
+    const pageOrientation = isLandscape ? 'A4 landscape' : 'A4 portrait';
+
+    // 1. Body for All Employees Leave Balance Summary (16 columns matching PNG)
+    const summaryTableHTML = `
+      <table border="1">
+        <thead>
+          <tr>
+            <th rowspan="2" style="vertical-align: middle; padding: 6px 8px; text-align: left;">Employee ID</th>
+            <th rowspan="2" style="vertical-align: middle; padding: 6px 8px; text-align: left;">Name</th>
+            <th rowspan="2" style="vertical-align: middle; padding: 6px 8px; text-align: left;">Department</th>
+            <th rowspan="2" style="vertical-align: middle; padding: 6px 8px; text-align: left;">Role</th>
+            <th colspan="2" class="text-center" style="padding: 6px 4px;">Annual (${annualDays}d)</th>
+            <th colspan="2" class="text-center" style="padding: 6px 4px;">Casual (${casualDays}d)</th>
+            <th colspan="2" class="text-center" style="padding: 6px 4px;">Medical (${medicalDays}d)</th>
+            <th colspan="2" class="text-center" style="padding: 6px 4px;">Statutory Maternity(${maternityDays}d)</th>
+            <th colspan="2" class="text-center" style="padding: 6px 4px;">Paternity Support (${paternityDays}d)</th>
+            <th colspan="2" class="text-center" style="padding: 6px 4px;">Unpaid (${unpaidDays}d)</th>
+          </tr>
+          <tr>
+            <th class="text-center" style="padding: 4px 6px; font-size: 7.5pt;">Used</th>
+            <th class="text-center" style="padding: 4px 6px; font-size: 7.5pt;">Left</th>
+            <th class="text-center" style="padding: 4px 6px; font-size: 7.5pt;">Used</th>
+            <th class="text-center" style="padding: 4px 6px; font-size: 7.5pt;">Left</th>
+            <th class="text-center" style="padding: 4px 6px; font-size: 7.5pt;">Used</th>
+            <th class="text-center" style="padding: 4px 6px; font-size: 7.5pt;">Left</th>
+            <th class="text-center" style="padding: 4px 6px; font-size: 7.5pt;">Used</th>
+            <th class="text-center" style="padding: 4px 6px; font-size: 7.5pt;">Left</th>
+            <th class="text-center" style="padding: 4px 6px; font-size: 7.5pt;">Used</th>
+            <th class="text-center" style="padding: 4px 6px; font-size: 7.5pt;">Left</th>
+            <th class="text-center" style="padding: 4px 6px; font-size: 7.5pt;">Used</th>
+            <th class="text-center" style="padding: 4px 6px; font-size: 7.5pt;">Left</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${allEmployeesReportData
+            .map(
+              (item) => `
+            <tr>
+              <td style="font-family: monospace;">${item.employee.employeeId}</td>
+              <td><strong>${item.employee.name}</strong></td>
+              <td>${item.employee.department}</td>
+              <td>${item.employee.role}</td>
+              <td class="text-center" style="font-family: monospace;">${item.balance.annualUsed}</td>
+              <td class="text-center" style="font-family: monospace; font-weight: bold; color: #15803d;">${item.annualRemaining}</td>
+              <td class="text-center" style="font-family: monospace;">${item.balance.casualUsed}</td>
+              <td class="text-center" style="font-family: monospace; font-weight: bold; color: #15803d;">${item.casualRemaining}</td>
+              <td class="text-center" style="font-family: monospace;">${item.balance.medicalUsed}</td>
+              <td class="text-center" style="font-family: monospace; font-weight: bold; color: #15803d;">${item.medicalRemaining}</td>
+              <td class="text-center" style="font-family: monospace;">${item.maternityUsed}</td>
+              <td class="text-center" style="font-family: monospace; font-weight: bold; color: #15803d;">${item.maternityRemaining}</td>
+              <td class="text-center" style="font-family: monospace;">${item.paternityUsed}</td>
+              <td class="text-center" style="font-family: monospace; font-weight: bold; color: #15803d;">${item.paternityRemaining}</td>
+              <td class="text-center" style="font-family: monospace;">${item.unpaidUsed}</td>
+              <td class="text-center" style="font-family: monospace; font-weight: bold; color: #15803d;">${item.unpaidRemaining}</td>
+            </tr>
+          `
+            )
+            .join('')}
+        </tbody>
+      </table>
+    `;
+
+    // 2. Body for All Employees Detailed Leave Report (including exact dates)
+    const allDetailedTableHTML = `
+      <div style="display: flex; gap: 12px; margin-bottom: 14px; font-size: 8.5pt;">
+        <div style="background: #f1f5f9; padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e1;">
+          <strong>Total Applications:</strong> ${leaves.length} records
+        </div>
+        <div style="background: #f0fdf4; padding: 6px 12px; border-radius: 6px; border: 1px solid #bbf7d0; color: #166534;">
+          <strong>Approved:</strong> ${leaves.filter((l) => l.status === 'approved').length} requests (${leaves.filter((l) => l.status === 'approved').reduce((s, l) => s + l.daysCount, 0)} days total)
+        </div>
+        <div style="background: #fffbeb; padding: 6px 12px; border-radius: 6px; border: 1px solid #fde68a; color: #92400e;">
+          <strong>Pending:</strong> ${leaves.filter((l) => l.status === 'pending').length} requests
+        </div>
+        <div style="background: #fef2f2; padding: 6px 12px; border-radius: 6px; border: 1px solid #fecaca; color: #991b1b;">
+          <strong>Rejected:</strong> ${leaves.filter((l) => l.status === 'rejected').length} requests
+        </div>
+      </div>
+
+      <table border="1">
+        <thead>
+          <tr>
+            <th style="width: 32px; text-align: center;">#</th>
+            <th style="width: 80px;">Ref ID</th>
+            <th style="width: 140px;">Employee</th>
+            <th style="width: 110px;">Department</th>
+            <th style="width: 90px;">Leave Type</th>
+            <th style="width: 85px;" class="text-center">Start Date</th>
+            <th style="width: 85px;" class="text-center">End Date</th>
+            <th style="width: 50px;" class="text-center">Days</th>
+            <th style="width: 80px;" class="text-center">Applied Date</th>
+            <th>Reason &amp; Emergency Contact</th>
+            <th style="width: 75px;" class="text-center">Status</th>
+            <th style="width: 130px;">HR Approver &amp; Remarks</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${leaves
+            .map(
+              (l, idx) => `
+            <tr>
+              <td class="text-center" style="font-family: monospace; color: #64748b;">${idx + 1}</td>
+              <td style="font-family: monospace; font-size: 8pt; font-weight: bold;">${l.id}</td>
+              <td>
+                <strong>${l.employeeName}</strong>
+                <div style="font-size: 7.5pt; color: #64748b; font-family: monospace;">${l.employeeId}</div>
+              </td>
+              <td>${l.department}</td>
+              <td>
+                <span style="font-weight: 600; text-transform: capitalize;">${l.leaveType}</span>
+              </td>
+              <td class="text-center" style="font-family: monospace; font-weight: 700; color: #1e293b;">
+                ${l.startDate}
+              </td>
+              <td class="text-center" style="font-family: monospace; font-weight: 700; color: #1e293b;">
+                ${l.endDate}
+              </td>
+              <td class="text-center" style="font-family: monospace; font-weight: 800; font-size: 9pt;">
+                ${l.daysCount}d
+              </td>
+              <td class="text-center" style="font-family: monospace; font-size: 8pt; color: #475569;">
+                ${l.appliedDate}
+              </td>
+              <td>
+                <div style="font-style: italic;">"${l.reason}"</div>
+                ${l.emergencyPhone ? `<div style="font-size: 7.5pt; color: #64748b; margin-top: 2px;">📞 ${l.emergencyPhone}</div>` : ''}
+              </td>
+              <td class="text-center">
+                <span style="
+                  font-weight: bold;
+                  font-size: 7.5pt;
+                  padding: 2px 6px;
+                  border-radius: 4px;
+                  text-transform: uppercase;
+                  ${
+                    l.status === 'approved'
+                      ? 'background: #dcfce7; color: #15803d; border: 1px solid #86efac;'
+                      : l.status === 'rejected'
+                      ? 'background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5;'
+                      : 'background: #fef3c7; color: #b45309; border: 1px solid #fde68a;'
+                  }
+                ">
+                  ${l.status}
+                </span>
+              </td>
+              <td>
+                ${l.reviewedBy ? `<strong>${l.reviewedBy}</strong>` : '<span style="color: #94a3b8; font-style: italic;">Pending Review</span>'}
+                ${l.managerComment ? `<div style="font-size: 7.5pt; color: #475569; font-style: italic;">"${l.managerComment}"</div>` : ''}
+              </td>
+            </tr>
+          `
+            )
+            .join('')}
+        </tbody>
+      </table>
+    `;
+
+    // 3. Body for Each Employee Detailed Leave Dossier & Statement (A4 Portrait)
+    const individualDetailedHTML = `
+      <!-- Employee Profile Summary Box -->
+      <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px;">
+        <table style="width: 100%; border-collapse: collapse; border: none; margin: 0; font-size: 8.5pt;">
+          <tbody>
+            <tr style="background: transparent;">
+              <td style="border: none; padding: 3px 6px; width: 50%;">
+                <strong style="color: #475569;">Employee Name:</strong>
+                <span style="font-size: 11pt; font-weight: 800; color: #0f172a; margin-left: 6px;">${targetEmp.name}</span>
+                ${targetEmp.nameMyanmar ? `<span style="color: #4338ca; font-size: 9pt; margin-left: 4px;">(${targetEmp.nameMyanmar})</span>` : ''}
+              </td>
+              <td style="border: none; padding: 3px 6px; width: 50%;">
+                <strong style="color: #475569;">Employee ID:</strong>
+                <span style="font-family: monospace; font-weight: 700; color: #1e1b4b; background: #e0e7ff; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">${targetEmp.employeeId}</span>
+              </td>
+            </tr>
+            <tr style="background: transparent;">
+              <td style="border: none; padding: 3px 6px;">
+                <strong style="color: #475569;">Department:</strong>
+                <span style="font-weight: 600; margin-left: 6px;">${targetEmp.department}</span>
+              </td>
+              <td style="border: none; padding: 3px 6px;">
+                <strong style="color: #475569;">Role / Designation:</strong>
+                <span style="font-weight: 600; margin-left: 6px;">${targetEmp.role}</span>
+              </td>
+            </tr>
+            <tr style="background: transparent;">
+              <td style="border: none; padding: 3px 6px;">
+                <strong style="color: #475569;">Date of Joining:</strong>
+                <span style="font-family: monospace; margin-left: 6px;">${targetEmp.joinDate}</span>
+              </td>
+              <td style="border: none; padding: 3px 6px;">
+                <strong style="color: #475569;">NRC Number:</strong>
+                <span style="font-family: monospace; margin-left: 6px;">${targetEmp.nrcNumber}</span>
+              </td>
+            </tr>
+            <tr style="background: transparent;">
+              <td style="border: none; padding: 3px 6px;">
+                <strong style="color: #475569;">Reporting Manager:</strong>
+                <span style="margin-left: 6px;">${targetEmp.reportingManager || 'Daw Khin Thuzar'}</span>
+              </td>
+              <td style="border: none; padding: 3px 6px;">
+                <strong style="color: #475569;">Contact Phone:</strong>
+                <span style="font-family: monospace; margin-left: 6px;">${targetEmp.phone}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Section 1: Statutory & Corporate Leave Entitlement & Balance Status -->
+      <h3 style="font-size: 10pt; font-weight: 800; color: #1e1b4b; margin: 12px 0 6px 0; border-left: 4px solid #4338ca; padding-left: 8px;">
+        1. Statutory Leave Entitlement &amp; Current Balance Status
+      </h3>
+      <table border="1" style="margin-bottom: 20px;">
+        <thead>
+          <tr>
+            <th>Statutory Leave Category</th>
+            <th class="text-center" style="width: 85px;">Entitlement</th>
+            <th class="text-center" style="width: 85px;">Days Taken</th>
+            <th class="text-center" style="width: 95px;">Remaining Balance</th>
+            <th>Governing Labor Statute / Policy Rule</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Annual Leave</strong></td>
+            <td class="text-center" style="font-family: monospace;">${annualDays} days</td>
+            <td class="text-center" style="font-family: monospace;">${targetBal.annualUsed} days</td>
+            <td class="text-center" style="font-family: monospace; font-weight: 800; color: #15803d; font-size: 9.5pt;">${Math.max(0, targetBal.annualTotal - targetBal.annualUsed)} days</td>
+            <td style="font-size: 8pt; color: #475569;">Myanmar Leave &amp; Holidays Act 1951, Section 4 (Earned Paid)</td>
+          </tr>
+          <tr>
+            <td><strong>Casual Leave</strong></td>
+            <td class="text-center" style="font-family: monospace;">${casualDays} days</td>
+            <td class="text-center" style="font-family: monospace;">${targetBal.casualUsed} days</td>
+            <td class="text-center" style="font-family: monospace; font-weight: 800; color: #15803d; font-size: 9.5pt;">${Math.max(0, targetBal.casualTotal - targetBal.casualUsed)} days</td>
+            <td style="font-size: 8pt; color: #475569;">Myanmar Leave &amp; Holidays Act 1951, Section 5 (Max 3 consecutive)</td>
+          </tr>
+          <tr>
+            <td><strong>Medical Leave</strong></td>
+            <td class="text-center" style="font-family: monospace;">${medicalDays} days</td>
+            <td class="text-center" style="font-family: monospace;">${targetBal.medicalUsed} days</td>
+            <td class="text-center" style="font-family: monospace; font-weight: 800; color: #15803d; font-size: 9.5pt;">${Math.max(0, targetBal.medicalTotal - targetBal.medicalUsed)} days</td>
+            <td style="font-size: 8pt; color: #475569;">Myanmar Leave &amp; Holidays Act 1951, Section 6 (Doctor Cert / SSB)</td>
+          </tr>
+          <tr>
+            <td><strong>Statutory Maternity Leave</strong></td>
+            <td class="text-center" style="font-family: monospace;">${maternityDays} days</td>
+            <td class="text-center" style="font-family: monospace;">${targetMaternityUsed} days</td>
+            <td class="text-center" style="font-family: monospace; font-weight: 800; color: #15803d; font-size: 9.5pt;">${targetMaternityRemaining} days</td>
+            <td style="font-size: 8pt; color: #475569;">Myanmar Social Security Law 2012 (Female entitlement 14 weeks)</td>
+          </tr>
+          <tr>
+            <td><strong>Paternity Support Leave</strong></td>
+            <td class="text-center" style="font-family: monospace;">${paternityDays} days</td>
+            <td class="text-center" style="font-family: monospace;">${targetPaternityUsed} days</td>
+            <td class="text-center" style="font-family: monospace; font-weight: 800; color: #15803d; font-size: 9.5pt;">${targetPaternityRemaining} days</td>
+            <td style="font-size: 8pt; color: #475569;">NexHR Corporate Family Support Policy 2026</td>
+          </tr>
+          <tr>
+            <td><strong>Unpaid Leave</strong></td>
+            <td class="text-center" style="font-family: monospace;">${unpaidDays} days</td>
+            <td class="text-center" style="font-family: monospace;">${targetUnpaidUsed} days</td>
+            <td class="text-center" style="font-family: monospace; font-weight: 800; color: #15803d; font-size: 9.5pt;">${targetUnpaidRemaining} days</td>
+            <td style="font-size: 8pt; color: #475569;">Without pay by management discretionary approval</td>
+          </tr>
+          <tr style="background: #eef2ff; font-weight: bold;">
+            <td>Total Statutory Paid Leaves</td>
+            <td class="text-center" style="font-family: monospace;">${targetBal.annualTotal + targetBal.casualTotal + targetBal.medicalTotal} days</td>
+            <td class="text-center" style="font-family: monospace; color: #4338ca;">${targetBal.annualUsed + targetBal.casualUsed + targetBal.medicalUsed} days</td>
+            <td class="text-center" style="font-family: monospace; color: #15803d; font-size: 10pt;">
+              ${Math.max(0, targetBal.annualTotal + targetBal.casualTotal + targetBal.medicalTotal - (targetBal.annualUsed + targetBal.casualUsed + targetBal.medicalUsed))} days
+            </td>
+            <td>Net statutory leave availability for current calendar year</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Section 2: Detailed Leave Application & History Log (Include All Dates) -->
+      <h3 style="font-size: 10pt; font-weight: 800; color: #1e1b4b; margin: 16px 0 6px 0; border-left: 4px solid #4338ca; padding-left: 8px;">
+        2. Detailed Leave Application &amp; Attendance History (With Full Dates)
+      </h3>
+      ${
+        targetLeaves.length === 0
+          ? `<div style="padding: 18px; text-align: center; color: #64748b; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 8.5pt;">
+               No leave records on file for this employee in the current calendar year.
+             </div>`
+          : `
+            <table border="1">
+              <thead>
+                <tr>
+                  <th style="width: 75px;">Ref ID</th>
+                  <th style="width: 80px;">Leave Type</th>
+                  <th style="width: 85px;" class="text-center">Start Date</th>
+                  <th style="width: 85px;" class="text-center">End Date</th>
+                  <th style="width: 45px;" class="text-center">Days</th>
+                  <th style="width: 80px;" class="text-center">Applied Date</th>
+                  <th>Reason &amp; Purpose</th>
+                  <th style="width: 75px;" class="text-center">Status</th>
+                  <th style="width: 120px;">HR Approver &amp; Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${targetLeaves
+                  .map(
+                    (l) => `
+                  <tr>
+                    <td style="font-family: monospace; font-weight: bold; font-size: 8pt;">${l.id}</td>
+                    <td><strong style="text-transform: capitalize;">${l.leaveType}</strong></td>
+                    <td class="text-center" style="font-family: monospace; font-weight: 700; color: #0f172a;">${l.startDate}</td>
+                    <td class="text-center" style="font-family: monospace; font-weight: 700; color: #0f172a;">${l.endDate}</td>
+                    <td class="text-center" style="font-family: monospace; font-weight: 800; font-size: 9pt;">${l.daysCount}d</td>
+                    <td class="text-center" style="font-family: monospace; font-size: 8pt; color: #475569;">${l.appliedDate}</td>
+                    <td style="font-style: italic;">"${l.reason}"</td>
+                    <td class="text-center">
+                      <span style="
+                        font-weight: bold;
+                        font-size: 7.5pt;
+                        padding: 2px 6px;
+                        border-radius: 4px;
+                        text-transform: uppercase;
+                        ${
+                          l.status === 'approved'
+                            ? 'background: #dcfce7; color: #15803d; border: 1px solid #86efac;'
+                            : l.status === 'rejected'
+                            ? 'background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5;'
+                            : 'background: #fef3c7; color: #b45309; border: 1px solid #fde68a;'
+                        }
+                      ">
+                        ${l.status}
+                      </span>
+                    </td>
+                    <td>
+                      ${l.reviewedBy ? `<strong>${l.reviewedBy}</strong>` : '<span style="color: #94a3b8; font-style: italic;">Pending Review</span>'}
+                      ${l.managerComment ? `<div style="font-size: 7.5pt; color: #475569; font-style: italic;">"${l.managerComment}"</div>` : ''}
+                    </td>
+                  </tr>
+                `
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+          `
+      }
+    `;
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>All Employees Leave Balance Summary - A4 Landscape</title>
+  <title>${reportTitle} - ${isLandscape ? 'A4 Landscape' : 'A4 Portrait'}</title>
   <style>
     @page {
-      size: A4 landscape;
-      margin: 8mm 10mm;
+      size: ${pageOrientation};
+      margin: ${isLandscape ? '8mm 10mm' : '10mm 12mm'};
     }
     * {
       box-sizing: border-box;
@@ -430,20 +846,20 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
     .header {
       border-bottom: 2px solid #0f172a;
       padding-bottom: 12px;
-      margin-bottom: 18px;
+      margin-bottom: 16px;
       display: flex;
       justify-content: space-between;
       align-items: flex-end;
     }
     .title {
-      font-size: 20pt;
+      font-size: ${isLandscape ? '19pt' : '17pt'};
       font-weight: 800;
       color: #0f172a;
       margin: 0;
       letter-spacing: -0.5px;
     }
     .subtitle {
-      font-size: 11pt;
+      font-size: 10pt;
       font-weight: 700;
       color: #312e81;
       margin-top: 4px;
@@ -457,8 +873,8 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 10px;
-      margin-bottom: 24px;
+      margin-top: 8px;
+      margin-bottom: 20px;
       font-size: 8.5pt;
     }
     th, td {
@@ -479,7 +895,7 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
     .text-center { text-align: center; }
     .text-right { text-align: right; }
     .footer {
-      margin-top: 32px;
+      margin-top: 28px;
       border-top: 1px solid #cbd5e1;
       padding-top: 15px;
       display: flex;
@@ -487,12 +903,12 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
       page-break-inside: avoid;
     }
     .sign-box {
-      width: 230px;
+      width: ${reportType === 'individual-detailed' ? '180px' : '230px'};
       text-align: center;
       font-size: 8.5pt;
     }
     .sign-line {
-      margin-top: 45px;
+      margin-top: 40px;
       border-top: 1px dashed #64748b;
       padding-top: 5px;
       color: #475569;
@@ -504,65 +920,43 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
   <div class="no-print-toolbar">
     <div>
       <strong style="color: #312e81; font-size: 10pt;">🖨️ Windows Printer Dialog Box:</strong>
-      <span style="color: #4338ca; font-size: 9pt; margin-left: 6px;">Windows print dialog is opening in A4 Landscape. If not shown, click button on right or press <b>Ctrl + P</b>.</span>
+      <span style="color: #4338ca; font-size: 9pt; margin-left: 6px;">Windows print dialog is opening in ${isLandscape ? 'A4 Landscape' : 'A4 Portrait'}. If not shown, click button on right or press <b>Ctrl + P</b>.</span>
     </div>
     <button onclick="window.print()">
-      🖨️ Print to Windows Printer (A4 Landscape)
+      🖨️ Print to Windows Printer (${isLandscape ? 'A4 Landscape' : 'A4 Portrait'})
     </button>
   </div>
 
   <div class="header">
     <div>
-      <h1 class="title">All Employees Leave Balance Summary</h1>
-      <div class="subtitle">NexHR Enterprise · Statutory Leave Entitlement &amp; Balance Register</div>
+      <h1 class="title">${reportTitle}</h1>
+      <div class="subtitle">${reportSubtitle}</div>
     </div>
     <div class="meta">
       <div><strong>Date:</strong> ${new Date().toLocaleDateString('en-GB')} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-      <div><strong>Report Format:</strong> A4 Landscape (297 × 210 mm)</div>
-      <div><strong>Form No:</strong> NX-HR-LVE-2026 / Myanmar Leave &amp; Holidays Act 1951</div>
+      <div><strong>Report Format:</strong> ${isLandscape ? 'A4 Landscape (297 × 210 mm)' : 'A4 Portrait (210 × 297 mm)'}</div>
+      <div><strong>Form No:</strong> ${reportType === 'individual-detailed' ? 'NX-HR-IND-LVE-2026' : 'NX-HR-LVE-2026'} / Myanmar Leave &amp; Holidays Act 1951</div>
     </div>
   </div>
 
-  <table border="1">
-    <thead>
-      <tr>
-        <th>Employee ID</th>
-        <th>Employee Name</th>
-        <th>Department</th>
-        <th>Role / Designation</th>
-        <th class="text-center">Annual Leave (${annualDays}d)</th>
-        <th class="text-center">Casual Leave (${casualDays}d)</th>
-        <th class="text-center">Medical Leave (${medicalDays}d)</th>
-        <th class="text-center">Total Entitled</th>
-        <th class="text-center">Total Taken</th>
-        <th class="text-center">Remaining Balance</th>
-        <th class="text-center">Utilization</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${allEmployeesReportData
-        .map(
-          (item) => `
-        <tr>
-          <td>${item.employee.employeeId}</td>
-          <td><strong>${item.employee.name}</strong></td>
-          <td>${item.employee.department}</td>
-          <td>${item.employee.role}</td>
-          <td class="text-center">${item.annualRemaining} left (${item.balance.annualUsed} used)</td>
-          <td class="text-center">${item.casualRemaining} left (${item.balance.casualUsed} used)</td>
-          <td class="text-center">${item.medicalRemaining} left (${item.balance.medicalUsed} used)</td>
-          <td class="text-center">${item.totalEntitlement}d</td>
-          <td class="text-center">${item.totalTaken}d</td>
-          <td class="text-center"><strong style="color: #15803d;">${item.totalRemaining}d</strong></td>
-          <td class="text-center">${item.utilizationRate}%</td>
-        </tr>
-      `
-        )
-        .join('')}
-    </tbody>
-  </table>
+  ${
+    reportType === 'all-summary'
+      ? summaryTableHTML
+      : reportType === 'all-detailed'
+      ? allDetailedTableHTML
+      : individualDetailedHTML
+  }
 
   <div class="footer">
+    ${
+      reportType === 'individual-detailed'
+        ? `
+        <div class="sign-box">
+          <div class="sign-line">Employee Signature<br/><strong>${targetEmp.name}</strong></div>
+        </div>
+      `
+        : ''
+    }
     <div class="sign-box">
       <div class="sign-line">Prepared By: Daw Khin Thuzar<br/>HR Operations Manager</div>
     </div>
@@ -572,6 +966,10 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
     <div class="sign-box">
       <div class="sign-line">Official System Stamp<br/>NexHR Cloud ERP</div>
     </div>
+  </div>
+
+  <div style="margin-top: 15px; text-align: center; font-size: 7.5pt; color: #94a3b8; font-family: monospace;">
+    Certified Official Document · Confirmed Under Myanmar Leave &amp; Holidays Act 1951 &amp; SSB Law 2012 · Generated by NexHR ERP
   </div>
 
   <script>
@@ -591,7 +989,10 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
   };
 
   // Dedicated helper to trigger Windows Print Dialog Box reliably
-  const triggerWindowsPrint = () => {
+  const triggerWindowsPrint = (
+    reportType: 'all-summary' | 'all-detailed' | 'individual-detailed' = printReportType,
+    targetEmpId: string = printSelectedEmpId
+  ) => {
     let printSucceeded = false;
 
     // Method 1: Inject printable HTML into a hidden iframe and trigger native print dialog
@@ -614,7 +1015,7 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
       const frameDoc = printFrame.contentDocument || printFrame.contentWindow?.document;
       if (frameDoc) {
         frameDoc.open();
-        frameDoc.write(generateA4PrintHTML());
+        frameDoc.write(generateA4PrintHTML(reportType, targetEmpId));
         frameDoc.close();
         printFrame.contentWindow?.focus();
         printFrame.contentWindow?.print();
@@ -624,7 +1025,7 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
       console.warn('Iframe print failed (iframe sandbox):', frameErr);
     }
 
-    // Method 2: Try window.print() directly in main window (uses our A4 Landscape @media print CSS)
+    // Method 2: Try window.print() directly in main window
     if (!printSucceeded) {
       try {
         window.focus();
@@ -637,47 +1038,98 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
 
     // Method 3: Fallback if browser/sandbox blocks interactive print dialogs
     if (!printSucceeded) {
-      handleDownloadPrintableHTML();
+      handleDownloadPrintableHTML(reportType, targetEmpId);
       setPrintStatusNotice(
         language === 'my'
-          ? 'Browser sandbox ကန့်သတ်ချက်ကြောင့် Printer Dialog တိုက်ရိုက်မပွင့်ပါ။ A4 Landscape HTML ဖိုင်ကို ဒေါင်းလုဒ်လုပ်ပေးထားပါသည် (ဖိုင်ဖွင့်လိုက်ပါက Windows Printer Dialog တန်းပွင့်ပါမည်) သို့မဟုတ် ကီးဘုတ်မှ Ctrl + P နှိပ်ပါ။'
-          : 'Windows Printer Dialog was triggered. If your browser restricts popups in this frame, the A4 Landscape HTML file was downloaded (open it to print immediately) or press Ctrl + P.'
+          ? 'Browser sandbox ကန့်သတ်ချက်ကြောင့် Printer Dialog တိုက်ရိုက်မပွင့်ပါ။ A4 HTML ဖိုင်ကို ဒေါင်းလုဒ်လုပ်ပေးထားပါသည် (ဖိုင်ဖွင့်လိုက်ပါက Windows Printer Dialog တန်းပွင့်ပါမည်) သို့မဟုတ် ကီးဘုတ်မှ Ctrl + P နှိပ်ပါ။'
+          : 'Windows Printer Dialog was triggered. If your browser restricts popups in this frame, the A4 HTML file was downloaded (open it to print immediately) or press Ctrl + P.'
       );
     } else {
+      const modeText =
+        reportType === 'all-summary'
+          ? 'All Employees Leave Balance Summary (A4 Landscape)'
+          : reportType === 'all-detailed'
+          ? 'All Employees Detailed Leave Report (A4 Landscape)'
+          : 'Each Employee Detailed Leave Statement (A4 Portrait)';
+
       setPrintStatusNotice(
         language === 'my'
-          ? 'Windows Printer Dialog Box ကို ဖွင့်လှစ်ပြီးပါပြီ (A4 Landscape Format)။'
-          : 'Windows Printer Dialog Box opened in A4 Landscape format.'
+          ? `Windows Printer Dialog Box ကို ဖွင့်လှစ်ပြီးပါပြီ (${modeText})။`
+          : `Windows Printer Dialog Box opened in ${modeText}.`
       );
     }
   };
 
-  // Print A4 via Windows Printer Dialog Box
-  const handlePrintA4 = () => {
+  // Print Handlers:
+  // 1. Balance Summary (A4 Landscape)
+  const handlePrintBalanceSummary = () => {
+    setPrintReportType('all-summary');
     setPrintScope('all');
     setPrintOrientation('landscape');
     setIsPrintModalOpen(true);
     setPrintStatusNotice(null);
-
-    // Call print immediately
     setTimeout(() => {
-      triggerWindowsPrint();
-    }, 100);
+      triggerWindowsPrint('all-summary');
+    }, 120);
+  };
+
+  // 2. All Employees Detailed Leave Report with Dates (A4 Landscape)
+  const handlePrintAllDetailed = () => {
+    setPrintReportType('all-detailed');
+    setPrintScope('all');
+    setPrintOrientation('landscape');
+    setIsPrintModalOpen(true);
+    setPrintStatusNotice(null);
+    setTimeout(() => {
+      triggerWindowsPrint('all-detailed');
+    }, 120);
+  };
+
+  // 3. Each Employee Detailed Leave Dossier with Dates & Balances (A4 Portrait)
+  const handlePrintIndividualDetailed = (empId?: string) => {
+    const target = empId || dossierEmpId || employees[0]?.employeeId || 'NX-1002';
+    setPrintReportType('individual-detailed');
+    setPrintSelectedEmpId(target);
+    setPrintScope('individual');
+    setPrintOrientation('portrait');
+    setIsPrintModalOpen(true);
+    setPrintStatusNotice(null);
+    setTimeout(() => {
+      triggerWindowsPrint('individual-detailed', target);
+    }, 120);
+  };
+
+  // Default Print Trigger
+  const handlePrintA4 = () => {
+    if (activeTab === 'individualEmployee') {
+      handlePrintIndividualDetailed(dossierEmpId);
+    } else {
+      handlePrintBalanceSummary();
+    }
   };
 
   // Direct print attempt from inside the modal
   const handleDirectPrintNow = () => {
-    triggerWindowsPrint();
+    triggerWindowsPrint(printReportType, printSelectedEmpId);
   };
 
   // Download standalone self-printing A4 HTML document
-  const handleDownloadPrintableHTML = () => {
-    const html = generateA4PrintHTML();
+  const handleDownloadPrintableHTML = (
+    reportType: 'all-summary' | 'all-detailed' | 'individual-detailed' = printReportType,
+    targetEmpId: string = printSelectedEmpId
+  ) => {
+    const html = generateA4PrintHTML(reportType, targetEmpId);
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `All_Employees_Leave_Balance_Summary_A4_Landscape_${new Date().toISOString().split('T')[0]}.html`;
+    const filePrefix =
+      reportType === 'all-summary'
+        ? 'All_Employees_Leave_Balance_Summary_A4_Landscape'
+        : reportType === 'all-detailed'
+        ? 'All_Employees_Detailed_Leave_Report_A4_Landscape'
+        : `Employee_${targetEmpId}_Detailed_Leave_Statement_A4_Portrait`;
+    link.download = `${filePrefix}_${new Date().toISOString().split('T')[0]}.html`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -688,15 +1140,15 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
   const handleExportPNG = () => {
     try {
       const scale = 2; // High-DPI 2x resolution
-      const baseWidth = 1420;
-      const rowHeight = 36;
+      const baseWidth = 1480;
+      const rowHeight = 32;
       const headerSectionHeight = 110;
-      const tableHeaderHeight = 44;
+      const tableHeaderHeight = 54; // 2 tiers: 28px + 26px
       const tableRowsHeight = allEmployeesReportData.length * rowHeight;
-      const totalsRowHeight = 40;
-      const footerSignHeight = 150;
-      const bottomNoteHeight = 40;
-      const padding = 45;
+      const totalsRowHeight = 36;
+      const footerSignHeight = 140;
+      const bottomNoteHeight = 35;
+      const padding = 40;
 
       const baseHeight =
         padding +
@@ -722,263 +1174,360 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
 
       // Top Decorative Header Bar
       ctx.fillStyle = '#312e81';
-      ctx.fillRect(padding, padding, baseWidth - padding * 2, 5);
+      ctx.fillRect(padding, padding, baseWidth - padding * 2, 4);
 
       // Header Subtitle
-      ctx.font = '600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       ctx.fillStyle = '#4338ca';
       ctx.textAlign = 'left';
-      ctx.fillText('NexHR Enterprise · Statutory Leave Entitlement & Balance Register', padding, padding + 26);
+      ctx.fillText('NexHR Enterprise · Statutory Leave Entitlement & Balance Register', padding, padding + 24);
 
       // Main Report Title
-      ctx.font = '800 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.font = '800 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       ctx.fillStyle = '#0f172a';
-      ctx.fillText('All Employees Leave Balance Summary', padding, padding + 56);
+      ctx.fillText('All Employees Leave Balance Summary', padding, padding + 52);
 
       // Header Metadata (Right Aligned)
       ctx.textAlign = 'right';
-      ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.font = '600 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       ctx.fillStyle = '#334155';
       ctx.fillText(
         `Date: ${new Date().toLocaleDateString('en-GB')} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
         baseWidth - padding,
-        padding + 24
+        padding + 22
       );
-      ctx.font = '500 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.font = '500 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       ctx.fillStyle = '#64748b';
-      ctx.fillText('Report Format: All Employee Leave Balance Report (PNG Format / A4 Landscape)', baseWidth - padding, padding + 42);
-      ctx.fillText('Form No: NX-HR-LVE-2026 / Myanmar Leave & Holidays Act 1951', baseWidth - padding, padding + 60);
+      ctx.fillText('Report Format: All Employee Leave Balance Report (PNG Format / A4 Landscape)', baseWidth - padding, padding + 38);
+      ctx.fillText('File: All Employee Leave Balance Report.png · Form No: NX-HR-LVE-2026', baseWidth - padding, padding + 54);
 
       // Divider Line below Header
       ctx.strokeStyle = '#0f172a';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(padding, padding + 76);
-      ctx.lineTo(baseWidth - padding, padding + 76);
+      ctx.moveTo(padding, padding + 70);
+      ctx.lineTo(baseWidth - padding, padding + 70);
       ctx.stroke();
 
       // Table Setup
-      const tableTop = padding + 92;
+      const tableTop = padding + 84;
       const tableWidth = baseWidth - padding * 2;
 
-      // Columns definitions with widths
-      const cols = [
-        { key: 'empId', label: 'Emp ID', width: 95, align: 'left' },
-        { key: 'name', label: 'Employee Name', width: 175, align: 'left' },
-        { key: 'dept', label: 'Department', width: 135, align: 'left' },
-        { key: 'role', label: 'Role / Designation', width: 155, align: 'left' },
-        { key: 'annual', label: `Annual (${annualDays}d)`, width: 130, align: 'center' },
-        { key: 'casual', label: `Casual (${casualDays}d)`, width: 130, align: 'center' },
-        { key: 'medical', label: `Medical (${medicalDays}d)`, width: 130, align: 'center' },
-        { key: 'entitled', label: 'Total Entitled', width: 105, align: 'center' },
-        { key: 'taken', label: 'Total Taken', width: 95, align: 'center' },
-        { key: 'remaining', label: 'Remaining Balance', width: 115, align: 'center' },
-        { key: 'util', label: 'Utilization', width: 65, align: 'center' },
+      // Table Column widths exactly matching layout in All Employee Leave Balance Report.png:
+      // Employee ID (110), Name (180), Department (140), Role (140)
+      // Annual (Used 65, Left 65 = 130)
+      // Casual (Used 65, Left 65 = 130)
+      // Medical (Used 65, Left 65 = 130)
+      // Statutory Maternity (Used 80, Left 80 = 160)
+      // Paternity Support (Used 75, Left 75 = 150)
+      // Unpaid (Used 65, Left 65 = 130)
+      // Total = 110+180+140+140+130+130+130+160+150+130 = 1400px (fits 1480 with 40 padding on each side)
+      const colEmpId = 110;
+      const colName = 180;
+      const colDept = 140;
+      const colRole = 140;
+
+      const leaveCols = [
+        { key: 'annual', label: `Annual (${annualDays}d)`, usedWidth: 65, leftWidth: 65 },
+        { key: 'casual', label: `Casual (${casualDays}d)`, usedWidth: 65, leftWidth: 65 },
+        { key: 'medical', label: `Medical (${medicalDays}d)`, usedWidth: 65, leftWidth: 65 },
+        { key: 'maternity', label: `Statutory Maternity(${maternityDays}d)`, usedWidth: 80, leftWidth: 80 },
+        { key: 'paternity', label: `Paternity Support (${paternityDays}d)`, usedWidth: 75, leftWidth: 75 },
+        { key: 'unpaid', label: `Unpaid (${unpaidDays}d)`, usedWidth: 65, leftWidth: 65 },
       ];
 
-      // Table Header Row Background
-      ctx.fillStyle = '#f1f5f9';
+      // Draw Header Background
+      ctx.fillStyle = '#f8fafc';
       ctx.fillRect(padding, tableTop, tableWidth, tableHeaderHeight);
 
-      // Table Header Border
-      ctx.strokeStyle = '#94a3b8';
+      // Draw Outer Header Border
+      ctx.strokeStyle = '#0f172a';
       ctx.lineWidth = 1;
       ctx.strokeRect(padding, tableTop, tableWidth, tableHeaderHeight);
 
-      // Draw Table Header Texts & Vertical Column Separators
+      // Horizontal separator between Tier 1 and Tier 2 (only across leave columns)
+      const leaveStartX = padding + colEmpId + colName + colDept + colRole;
+      ctx.beginPath();
+      ctx.moveTo(leaveStartX, tableTop + 28);
+      ctx.lineTo(padding + tableWidth, tableTop + 28);
+      ctx.stroke();
+
+      // Tier 1 Header texts:
       ctx.fillStyle = '#0f172a';
       ctx.font = '700 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
-      let currentX = padding;
-      cols.forEach((col, idx) => {
-        if (col.align === 'center') {
-          ctx.textAlign = 'center';
-          ctx.fillText(col.label, currentX + col.width / 2, tableTop + 27);
-        } else if (col.align === 'right') {
-          ctx.textAlign = 'right';
-          ctx.fillText(col.label, currentX + col.width - 10, tableTop + 27);
-        } else {
-          ctx.textAlign = 'left';
-          ctx.fillText(col.label, currentX + 8, tableTop + 27);
-        }
+      // 1. Employee ID
+      ctx.textAlign = 'center';
+      ctx.fillText('Employee ID', padding + colEmpId / 2, tableTop + 32);
 
-        if (idx > 0) {
-          ctx.strokeStyle = '#cbd5e1';
-          ctx.beginPath();
-          ctx.moveTo(currentX, tableTop);
-          ctx.lineTo(currentX, tableTop + tableHeaderHeight);
-          ctx.stroke();
-        }
-        currentX += col.width;
+      // 2. Name
+      ctx.fillText('Name', padding + colEmpId + colName / 2, tableTop + 32);
+
+      // 3. Department
+      ctx.fillText('Department', padding + colEmpId + colName + colDept / 2, tableTop + 32);
+
+      // 4. Role
+      ctx.fillText('Role', padding + colEmpId + colName + colDept + colRole / 2, tableTop + 32);
+
+      // Vertical line after first 4 basic columns
+      ctx.strokeStyle = '#94a3b8';
+      [
+        padding + colEmpId,
+        padding + colEmpId + colName,
+        padding + colEmpId + colName + colDept,
+        leaveStartX,
+      ].forEach((x) => {
+        ctx.beginPath();
+        ctx.moveTo(x, tableTop);
+        ctx.lineTo(x, tableTop + tableHeaderHeight);
+        ctx.stroke();
+      });
+
+      // Draw Leave Group Headers (Tier 1) and subheaders (Tier 2: Used | Left)
+      let currentX = leaveStartX;
+      leaveCols.forEach((lCol) => {
+        const groupWidth = lCol.usedWidth + lCol.leftWidth;
+
+        // Tier 1 Group Header
+        ctx.font = '700 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillStyle = '#0f172a';
+        ctx.textAlign = 'center';
+        ctx.fillText(lCol.label, currentX + groupWidth / 2, tableTop + 19);
+
+        // Tier 2: Used & Left
+        ctx.font = '600 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillStyle = '#475569';
+        ctx.fillText('Used', currentX + lCol.usedWidth / 2, tableTop + 45);
+        ctx.fillText('Left', currentX + lCol.usedWidth + lCol.leftWidth / 2, tableTop + 45);
+
+        // Sub-column separator line
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.beginPath();
+        ctx.moveTo(currentX + lCol.usedWidth, tableTop + 28);
+        ctx.lineTo(currentX + lCol.usedWidth, tableTop + tableHeaderHeight);
+        ctx.stroke();
+
+        currentX += groupWidth;
+
+        // Group separator line
+        ctx.strokeStyle = '#94a3b8';
+        ctx.beginPath();
+        ctx.moveTo(currentX, tableTop);
+        ctx.lineTo(currentX, tableTop + tableHeaderHeight);
+        ctx.stroke();
       });
 
       // Draw Rows
       let rowY = tableTop + tableHeaderHeight;
-      let totalEntitledSum = 0;
-      let totalTakenSum = 0;
-      let totalRemainingSum = 0;
 
       allEmployeesReportData.forEach((item, rIdx) => {
-        totalEntitledSum += item.totalEntitlement;
-        totalTakenSum += item.totalTaken;
-        totalRemainingSum += item.totalRemaining;
-
         // Row background
         ctx.fillStyle = rIdx % 2 === 0 ? '#ffffff' : '#f8fafc';
         ctx.fillRect(padding, rowY, tableWidth, rowHeight);
 
         // Row border
-        ctx.strokeStyle = '#e2e8f0';
+        ctx.strokeStyle = '#cbd5e1';
         ctx.lineWidth = 1;
         ctx.strokeRect(padding, rowY, tableWidth, rowHeight);
 
-        // Column cell contents
-        let x = padding;
-        cols.forEach((col, cIdx) => {
-          if (cIdx > 0) {
-            ctx.strokeStyle = '#e2e8f0';
-            ctx.beginPath();
-            ctx.moveTo(x, rowY);
-            ctx.lineTo(x, rowY + rowHeight);
-            ctx.stroke();
-          }
+        // Cell 1: Employee ID
+        ctx.font = '500 10.5px monospace';
+        ctx.fillStyle = '#1e293b';
+        ctx.textAlign = 'center';
+        ctx.fillText(item.employee.employeeId, padding + colEmpId / 2, rowY + 20);
 
-          ctx.font = '400 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-          ctx.fillStyle = '#334155';
+        // Cell 2: Name
+        ctx.font = '700 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillStyle = '#0f172a';
+        ctx.textAlign = 'left';
+        ctx.fillText(item.employee.name, padding + colEmpId + 8, rowY + 20);
 
-          if (col.key === 'empId') {
-            ctx.textAlign = 'left';
-            ctx.font = '500 11px monospace';
-            ctx.fillText(item.employee.employeeId, x + 8, rowY + 22);
-          } else if (col.key === 'name') {
-            ctx.textAlign = 'left';
-            ctx.font = '700 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillStyle = '#0f172a';
-            ctx.fillText(item.employee.name, x + 8, rowY + 22);
-          } else if (col.key === 'dept') {
-            ctx.textAlign = 'left';
-            ctx.fillText(item.employee.department, x + 8, rowY + 22);
-          } else if (col.key === 'role') {
-            ctx.textAlign = 'left';
-            ctx.fillText(item.employee.role, x + 8, rowY + 22);
-          } else if (col.key === 'annual') {
-            ctx.textAlign = 'center';
-            ctx.fillText(`${item.annualRemaining} left (${item.balance.annualUsed}u)`, x + col.width / 2, rowY + 22);
-          } else if (col.key === 'casual') {
-            ctx.textAlign = 'center';
-            ctx.fillText(`${item.casualRemaining} left (${item.balance.casualUsed}u)`, x + col.width / 2, rowY + 22);
-          } else if (col.key === 'medical') {
-            ctx.textAlign = 'center';
-            ctx.fillText(`${item.medicalRemaining} left (${item.balance.medicalUsed}u)`, x + col.width / 2, rowY + 22);
-          } else if (col.key === 'entitled') {
-            ctx.textAlign = 'center';
-            ctx.font = '500 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillText(`${item.totalEntitlement}d`, x + col.width / 2, rowY + 22);
-          } else if (col.key === 'taken') {
-            ctx.textAlign = 'center';
-            ctx.fillText(`${item.totalTaken}d`, x + col.width / 2, rowY + 22);
-          } else if (col.key === 'remaining') {
-            ctx.textAlign = 'center';
-            ctx.font = '700 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-            ctx.fillStyle = '#15803d'; // Highlighted Green
-            ctx.fillText(`${item.totalRemaining}d`, x + col.width / 2, rowY + 22);
-          } else if (col.key === 'util') {
-            ctx.textAlign = 'center';
-            ctx.fillText(`${item.utilizationRate}%`, x + col.width / 2, rowY + 22);
-          }
+        // Cell 3: Department
+        ctx.font = '400 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillStyle = '#475569';
+        ctx.fillText(item.employee.department, padding + colEmpId + colName + 8, rowY + 20);
 
-          x += col.width;
+        // Cell 4: Role
+        ctx.fillText(item.employee.role, padding + colEmpId + colName + colDept + 8, rowY + 20);
+
+        // Vertical lines for basic columns
+        ctx.strokeStyle = '#e2e8f0';
+        [
+          padding + colEmpId,
+          padding + colEmpId + colName,
+          padding + colEmpId + colName + colDept,
+          leaveStartX,
+        ].forEach((x) => {
+          ctx.beginPath();
+          ctx.moveTo(x, rowY);
+          ctx.lineTo(x, rowY + rowHeight);
+          ctx.stroke();
+        });
+
+        // Cell values for each leave type
+        let x = leaveStartX;
+        const leaveValues = [
+          { used: item.balance.annualUsed, left: item.annualRemaining, uW: 65, lW: 65 },
+          { used: item.balance.casualUsed, left: item.casualRemaining, uW: 65, lW: 65 },
+          { used: item.balance.medicalUsed, left: item.medicalRemaining, uW: 65, lW: 65 },
+          { used: item.maternityUsed, left: item.maternityRemaining, uW: 80, lW: 80 },
+          { used: item.paternityUsed, left: item.paternityRemaining, uW: 75, lW: 75 },
+          { used: item.unpaidUsed, left: item.unpaidRemaining, uW: 65, lW: 65 },
+        ];
+
+        leaveValues.forEach((lVal) => {
+          // Used
+          ctx.font = '500 10.5px monospace';
+          ctx.fillStyle = '#475569';
+          ctx.textAlign = 'center';
+          ctx.fillText(String(lVal.used), x + lVal.uW / 2, rowY + 20);
+
+          // Sub-separator
+          ctx.strokeStyle = '#e2e8f0';
+          ctx.beginPath();
+          ctx.moveTo(x + lVal.uW, rowY);
+          ctx.lineTo(x + lVal.uW, rowY + rowHeight);
+          ctx.stroke();
+
+          // Left
+          ctx.font = '700 10.5px monospace';
+          ctx.fillStyle = '#15803d'; // Green
+          ctx.fillText(String(lVal.left), x + lVal.uW + lVal.lW / 2, rowY + 20);
+
+          x += lVal.uW + lVal.lW;
+
+          // Group separator
+          ctx.strokeStyle = '#cbd5e1';
+          ctx.beginPath();
+          ctx.moveTo(x, rowY);
+          ctx.lineTo(x, rowY + rowHeight);
+          ctx.stroke();
         });
 
         rowY += rowHeight;
       });
 
-      // Totals / Grand Summary Row
-      ctx.fillStyle = '#eef2ff';
+      // Totals / Summary Row
+      ctx.fillStyle = '#f1f5f9';
       ctx.fillRect(padding, rowY, tableWidth, totalsRowHeight);
-      ctx.strokeStyle = '#c7d2fe';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 1;
       ctx.strokeRect(padding, rowY, tableWidth, totalsRowHeight);
 
-      ctx.fillStyle = '#312e81';
-      ctx.font = '700 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = '#0f172a';
+      ctx.font = '700 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText(`Grand Total (${allEmployeesReportData.length} Employees)`, padding + 8, rowY + 25);
+      ctx.fillText(`Workforce Total (${allEmployeesReportData.length} Permanent Staff)`, padding + 12, rowY + 23);
 
-      // Entitled total
-      const entitledX = padding + 95 + 175 + 135 + 155 + 130 + 130 + 130;
-      ctx.textAlign = 'center';
-      ctx.fillText(`${totalEntitledSum}d`, entitledX + 105 / 2, rowY + 25);
+      // Vertical line before leaves in totals
+      ctx.strokeStyle = '#94a3b8';
+      ctx.beginPath();
+      ctx.moveTo(leaveStartX, rowY);
+      ctx.lineTo(leaveStartX, rowY + totalsRowHeight);
+      ctx.stroke();
 
-      // Taken total
-      const takenX = entitledX + 105;
-      ctx.fillText(`${totalTakenSum}d`, takenX + 95 / 2, rowY + 25);
+      // Compute sums
+      const sumAnnualUsed = allEmployeesReportData.reduce((acc, i) => acc + i.balance.annualUsed, 0);
+      const sumAnnualLeft = allEmployeesReportData.reduce((acc, i) => acc + i.annualRemaining, 0);
+      const sumCasualUsed = allEmployeesReportData.reduce((acc, i) => acc + i.balance.casualUsed, 0);
+      const sumCasualLeft = allEmployeesReportData.reduce((acc, i) => acc + i.casualRemaining, 0);
+      const sumMedicalUsed = allEmployeesReportData.reduce((acc, i) => acc + i.balance.medicalUsed, 0);
+      const sumMedicalLeft = allEmployeesReportData.reduce((acc, i) => acc + i.medicalRemaining, 0);
+      const sumMaternityUsed = allEmployeesReportData.reduce((acc, i) => acc + i.maternityUsed, 0);
+      const sumMaternityLeft = allEmployeesReportData.reduce((acc, i) => acc + i.maternityRemaining, 0);
+      const sumPaternityUsed = allEmployeesReportData.reduce((acc, i) => acc + i.paternityUsed, 0);
+      const sumPaternityLeft = allEmployeesReportData.reduce((acc, i) => acc + i.paternityRemaining, 0);
+      const sumUnpaidUsed = allEmployeesReportData.reduce((acc, i) => acc + i.unpaidUsed, 0);
+      const sumUnpaidLeft = allEmployeesReportData.reduce((acc, i) => acc + i.unpaidRemaining, 0);
 
-      // Remaining total
-      const remX = takenX + 95;
-      ctx.fillStyle = '#15803d';
-      ctx.fillText(`${totalRemainingSum}d`, remX + 115 / 2, rowY + 25);
+      const totalLeaveSums = [
+        { u: sumAnnualUsed, l: sumAnnualLeft, uW: 65, lW: 65 },
+        { u: sumCasualUsed, l: sumCasualLeft, uW: 65, lW: 65 },
+        { u: sumMedicalUsed, l: sumMedicalLeft, uW: 65, lW: 65 },
+        { u: sumMaternityUsed, l: sumMaternityLeft, uW: 80, lW: 80 },
+        { u: sumPaternityUsed, l: sumPaternityLeft, uW: 75, lW: 75 },
+        { u: sumUnpaidUsed, l: sumUnpaidLeft, uW: 65, lW: 65 },
+      ];
 
-      // Average Utilization
-      const utilX = remX + 115;
-      const avgUtil = totalEntitledSum > 0 ? Math.round((totalTakenSum / totalEntitledSum) * 100) : 0;
-      ctx.fillStyle = '#312e81';
-      ctx.fillText(`${avgUtil}%`, utilX + 65 / 2, rowY + 25);
+      let totX = leaveStartX;
+      totalLeaveSums.forEach((ts) => {
+        ctx.font = '700 10.5px monospace';
+        ctx.fillStyle = '#334155';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(ts.u), totX + ts.uW / 2, rowY + 23);
+
+        ctx.fillStyle = '#15803d';
+        ctx.fillText(String(ts.l), totX + ts.uW + ts.lW / 2, rowY + 23);
+
+        totX += ts.uW + ts.lW;
+
+        ctx.strokeStyle = '#94a3b8';
+        ctx.beginPath();
+        ctx.moveTo(totX, rowY);
+        ctx.lineTo(totX, rowY + totalsRowHeight);
+        ctx.stroke();
+      });
 
       rowY += totalsRowHeight;
 
       // Sign-off Blocks (Footer)
-      const signY = rowY + 45;
-      const signBoxWidth = 260;
-      const numBoxes = 3;
-      const spacing = (tableWidth - signBoxWidth * numBoxes) / (numBoxes - 1);
+      const signY = rowY + 36;
+      const boxWidth = 240;
+      const boxGap = (tableWidth - boxWidth * 3) / 2;
 
-      const signOffs = [
-        {
-          name: 'Daw Khin Thuzar',
-          role: 'HR Operations Manager',
-          sub: 'Prepared & Verified',
-        },
-        {
-          name: 'U Thein Lwin Oo',
-          role: 'Executive Director',
-          sub: 'Authorized & Signed',
-        },
-        {
-          name: 'NexHR ERP Cloud',
-          role: 'Official System Stamp',
-          sub: 'NX-2026-CERTIFIED',
-        },
-      ];
+      // Box 1: Prepared By
+      const b1X = padding;
+      ctx.textAlign = 'center';
+      ctx.font = '700 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText('Daw Khin Thuzar', b1X + boxWidth / 2, signY + 35);
+      ctx.font = '500 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = '#64748b';
+      ctx.fillText('HR Operations Manager (Prepared)', b1X + boxWidth / 2, signY + 50);
 
-      signOffs.forEach((sign, sIdx) => {
-        const boxX = padding + sIdx * (signBoxWidth + spacing);
-        ctx.strokeStyle = '#94a3b8';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(boxX, signY);
-        ctx.lineTo(boxX + signBoxWidth, signY);
-        ctx.stroke();
-        ctx.setLineDash([]);
+      ctx.strokeStyle = '#94a3b8';
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(b1X + 20, signY + 18);
+      ctx.lineTo(b1X + boxWidth - 20, signY + 18);
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-        ctx.textAlign = 'center';
-        ctx.font = '700 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillStyle = '#0f172a';
-        ctx.fillText(sign.name, boxX + signBoxWidth / 2, signY + 22);
+      // Box 2: Verified By
+      const b2X = padding + boxWidth + boxGap;
+      ctx.font = '700 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText('U Thein Lwin Oo', b2X + boxWidth / 2, signY + 35);
+      ctx.font = '500 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = '#64748b';
+      ctx.fillText('Executive Director (Authorized & Signed)', b2X + boxWidth / 2, signY + 50);
 
-        ctx.font = '500 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillStyle = '#475569';
-        ctx.fillText(sign.role, boxX + signBoxWidth / 2, signY + 38);
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(b2X + 20, signY + 18);
+      ctx.lineTo(b2X + boxWidth - 20, signY + 18);
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-        ctx.font = '500 9.5px monospace';
-        ctx.fillStyle = '#94a3b8';
-        ctx.fillText(sign.sub, boxX + signBoxWidth / 2, signY + 54);
-      });
+      // Box 3: System Stamp
+      const b3X = padding + (boxWidth + boxGap) * 2;
+      ctx.font = '700 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText('NexHR ERP Cloud Enterprise', b3X + boxWidth / 2, signY + 35);
+      ctx.font = '500 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = '#64748b';
+      ctx.fillText('Official System Stamp · NX-2026-CERTIFIED', b3X + boxWidth / 2, signY + 50);
 
-      // Bottom disclaimer / footer
-      const bottomY = signY + 80;
-      ctx.strokeStyle = '#e2e8f0';
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(b3X + 20, signY + 18);
+      ctx.lineTo(b3X + boxWidth - 20, signY + 18);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Bottom Statutory Ledger Note
+      const bottomY = signY + 75;
+      ctx.strokeStyle = '#cbd5e1';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(padding, bottomY);
@@ -987,11 +1536,11 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
 
       ctx.textAlign = 'center';
       ctx.font = '500 10px monospace';
-      ctx.fillStyle = '#94a3b8';
+      ctx.fillStyle = '#64748b';
       ctx.fillText(
         'Official Statutory Leave Ledger Record (PNG Format) · Confirmed under Myanmar Leave & Holidays Act 1951',
         baseWidth / 2,
-        bottomY + 20
+        bottomY + 18
       );
 
       // Convert to blob and trigger download as "All Employee Leave Balance Report.png"
@@ -1021,6 +1570,7 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
       );
     }
   };
+
   const handleExportExcel = () => {
     const title =
       activeTab === 'allEmployees'
@@ -1050,21 +1600,18 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
               <th>Name</th>
               <th>Department</th>
               <th>Role</th>
-              <th>Annual Total (${annualDays}d)</th>
               <th>Annual Used</th>
-              <th>Annual Left</th>
-              <th>Casual Total (${casualDays}d)</th>
+              <th>Annual Left (${annualDays}d)</th>
               <th>Casual Used</th>
-              <th>Casual Left</th>
-              <th>Medical Total (${medicalDays}d)</th>
+              <th>Casual Left (${casualDays}d)</th>
               <th>Medical Used</th>
-              <th>Medical Left</th>
-              <th>Total Entitled</th>
-              <th>Total Taken</th>
-              <th>Total Left</th>
-              <th>Utilization %</th>
-              <th>Pending Leaves</th>
-              <th>Approved Leaves</th>
+              <th>Medical Left (${medicalDays}d)</th>
+              <th>Maternity Used</th>
+              <th>Maternity Left (${maternityDays}d)</th>
+              <th>Paternity Used</th>
+              <th>Paternity Left (${paternityDays}d)</th>
+              <th>Unpaid Used</th>
+              <th>Unpaid Left (${unpaidDays}d)</th>
             </tr>
           </thead>
           <tbody>
@@ -1076,21 +1623,18 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
                 <td>${item.employee.name}</td>
                 <td>${item.employee.department}</td>
                 <td>${item.employee.role}</td>
-                <td>${item.balance.annualTotal}</td>
                 <td>${item.balance.annualUsed}</td>
                 <td>${item.annualRemaining}</td>
-                <td>${item.balance.casualTotal}</td>
                 <td>${item.balance.casualUsed}</td>
                 <td>${item.casualRemaining}</td>
-                <td>${item.balance.medicalTotal}</td>
                 <td>${item.balance.medicalUsed}</td>
                 <td>${item.medicalRemaining}</td>
-                <td>${item.totalEntitlement}</td>
-                <td>${item.totalTaken}</td>
-                <td>${item.totalRemaining}</td>
-                <td>${item.utilizationRate}%</td>
-                <td>${item.pendingCount}</td>
-                <td>${item.approvedCount}</td>
+                <td>${item.maternityUsed}</td>
+                <td>${item.maternityRemaining}</td>
+                <td>${item.paternityUsed}</td>
+                <td>${item.paternityRemaining}</td>
+                <td>${item.unpaidUsed}</td>
+                <td>${item.unpaidRemaining}</td>
               </tr>
             `
               )
@@ -1154,23 +1698,18 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
       'Name',
       'Department',
       'Role',
-      `Annual Total (${annualDays}d)`,
       'Annual Used',
-      'Annual Left',
-      `Casual Total (${casualDays}d)`,
+      `Annual Left (${annualDays}d)`,
       'Casual Used',
-      'Casual Left',
-      `Medical Total (${medicalDays}d)`,
+      `Casual Left (${casualDays}d)`,
       'Medical Used',
-      'Medical Left',
-      'Maternity Total',
+      `Medical Left (${medicalDays}d)`,
       'Maternity Used',
-      'Maternity Left',
-      'Total Entitled',
-      'Total Taken',
-      'Total Left',
-      'Utilization %',
-      'Pending Requests',
+      `Maternity Left (${maternityDays}d)`,
+      'Paternity Used',
+      `Paternity Left (${paternityDays}d)`,
+      'Unpaid Used',
+      `Unpaid Left (${unpaidDays}d)`,
     ];
 
     const rows = allEmployeesReportData.map((item) => [
@@ -1178,23 +1717,18 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
       `"${item.employee.name}"`,
       `"${item.employee.department}"`,
       `"${item.employee.role}"`,
-      item.balance.annualTotal,
       item.balance.annualUsed,
       item.annualRemaining,
-      item.balance.casualTotal,
       item.balance.casualUsed,
       item.casualRemaining,
-      item.balance.medicalTotal,
       item.balance.medicalUsed,
       item.medicalRemaining,
-      item.balance.maternityTotal,
-      item.balance.maternityUsed,
+      item.maternityUsed,
       item.maternityRemaining,
-      item.totalEntitlement,
-      item.totalTaken,
-      item.totalRemaining,
-      `${item.utilizationRate}%`,
-      item.pendingCount,
+      item.paternityUsed,
+      item.paternityRemaining,
+      item.unpaidUsed,
+      item.unpaidRemaining,
     ]);
 
     const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
@@ -1292,13 +1826,23 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
             </button>
           )}
 
+          {/* A4 Print Buttons */}
           <button
-            onClick={handlePrintA4}
+            onClick={handlePrintBalanceSummary}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-xs transition-colors cursor-pointer"
-            title="Open Windows Printer Dialog Box to print leave list on A4 paper"
+            title="Print All Employees Leave Balance Summary on A4 Landscape paper (matches All Employee Leave Balance Report.png)"
           >
             <Printer className="w-3.5 h-3.5 text-indigo-600" />
-            <span>{language === 'my' ? 'A4 Print (Windows)' : 'Print A4 (Windows)'}</span>
+            <span>{language === 'my' ? 'ခွင့်လက်ကျန် A4 ပုံနှိပ်မည်' : 'Print Balance Summary (A4)'}</span>
+          </button>
+
+          <button
+            onClick={handlePrintAllDetailed}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-xs transition-colors cursor-pointer"
+            title="Print complete detailed leave applications report with dates for all employees on A4 Landscape paper"
+          >
+            <FileText className="w-3.5 h-3.5 text-indigo-600" />
+            <span>{language === 'my' ? 'ခွင့်မှတ်တမ်းအသေးစိတ် A4 ပုံနှိပ်မည်' : 'Print Detail All Leave Report (A4)'}</span>
           </button>
 
           <button
@@ -1629,56 +2173,61 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold text-[11px]">
-                    <th className="py-3 px-4">Employee</th>
-                    <th className="py-3 px-3 text-center">Annual Leave ({annualDays}d)</th>
-                    <th className="py-3 px-3 text-center">Casual Leave ({casualDays}d)</th>
-                    <th className="py-3 px-3 text-center">Medical Leave ({medicalDays}d)</th>
-                    <th className="py-3 px-3 text-center">Total Entitled</th>
-                    <th className="py-3 px-3 text-center">Total Taken</th>
-                    <th className="py-3 px-3 text-center">Total Remaining</th>
-                    <th className="py-3 px-4 text-center">Utilization</th>
-                    <th className="py-3 px-4 text-center">Requests</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold text-[11px]">
+                    <th rowSpan={2} className="py-2.5 px-3 border-r border-slate-200">Employee</th>
+                    <th colSpan={2} className="py-1 px-2 text-center border-r border-slate-200">Annual ({annualDays}d)</th>
+                    <th colSpan={2} className="py-1 px-2 text-center border-r border-slate-200">Casual ({casualDays}d)</th>
+                    <th colSpan={2} className="py-1 px-2 text-center border-r border-slate-200">Medical ({medicalDays}d)</th>
+                    <th colSpan={2} className="py-1 px-2 text-center border-r border-slate-200">Maternity ({maternityDays}d)</th>
+                    <th colSpan={2} className="py-1 px-2 text-center border-r border-slate-200">Paternity ({paternityDays}d)</th>
+                    <th colSpan={2} className="py-1 px-2 text-center border-r border-slate-200">Unpaid ({unpaidDays}d)</th>
+                    <th rowSpan={2} className="py-2.5 px-3 text-center border-r border-slate-200">Requests</th>
+                    <th rowSpan={2} className="py-2.5 px-3 text-right">Actions</th>
+                  </tr>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px]">
+                    <th className="py-1 px-2 text-center font-mono">Used</th>
+                    <th className="py-1 px-2 text-center font-mono font-bold text-emerald-700 border-r border-slate-200">Left</th>
+                    <th className="py-1 px-2 text-center font-mono">Used</th>
+                    <th className="py-1 px-2 text-center font-mono font-bold text-emerald-700 border-r border-slate-200">Left</th>
+                    <th className="py-1 px-2 text-center font-mono">Used</th>
+                    <th className="py-1 px-2 text-center font-mono font-bold text-emerald-700 border-r border-slate-200">Left</th>
+                    <th className="py-1 px-2 text-center font-mono">Used</th>
+                    <th className="py-1 px-2 text-center font-mono font-bold text-emerald-700 border-r border-slate-200">Left</th>
+                    <th className="py-1 px-2 text-center font-mono">Used</th>
+                    <th className="py-1 px-2 text-center font-mono font-bold text-emerald-700 border-r border-slate-200">Left</th>
+                    <th className="py-1 px-2 text-center font-mono">Used</th>
+                    <th className="py-1 px-2 text-center font-mono font-bold text-emerald-700 border-r border-slate-200">Left</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredReportData.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="py-8 text-center text-slate-400 text-xs">
+                      <td colSpan={15} className="py-8 text-center text-slate-400 text-xs">
                         No employees found matching current filter criteria.
                       </td>
                     </tr>
                   ) : (
                     filteredReportData.map((item) => {
-                      const isKoThantZin = item.employee.name.toLowerCase().includes('thant zin');
                       return (
                         <tr
                           key={item.employee.id}
-                          className={`hover:bg-slate-50/80 transition-colors ${
-                            isKoThantZin ? 'bg-indigo-50/30' : ''
-                          }`}
+                          className="hover:bg-slate-50/80 transition-colors"
                         >
                           {/* Employee Identity */}
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2.5">
+                          <td className="py-2.5 px-3 border-r border-slate-100">
+                            <div className="flex items-center gap-2">
                               <img
                                 src={item.employee.avatar}
                                 alt={item.employee.name}
-                                className="w-8 h-8 rounded-full object-cover border border-slate-200 bg-slate-100 shrink-0"
+                                className="w-7 h-7 rounded-full object-cover border border-slate-200 bg-slate-100 shrink-0"
                                 onError={(e) => {
                                   (e.target as HTMLImageElement).src =
                                     'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(item.employee.name);
                                 }}
                               />
                               <div>
-                                <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                                <div className="font-semibold text-slate-900 text-xs flex items-center gap-1">
                                   <span>{item.employee.name}</span>
-                                  {isKoThantZin && (
-                                    <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-700 rounded-md text-[10px] font-bold">
-                                      Tomorrow Approved
-                                    </span>
-                                  )}
                                 </div>
                                 <div className="text-[10px] text-slate-400 font-mono">
                                   {item.employee.employeeId} · {item.employee.department}
@@ -1687,75 +2236,32 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
                             </div>
                           </td>
 
-                          {/* Annual Leave */}
-                          <td className="py-3 px-3 text-center font-mono">
-                            <div className="font-bold text-slate-900">
-                              {item.annualRemaining} <span className="text-[10px] text-slate-400 font-normal">left</span>
-                            </div>
-                            <div className="text-[10px] text-slate-400">
-                              {item.balance.annualUsed} / {item.balance.annualTotal}d
-                            </div>
-                          </td>
+                          {/* Annual */}
+                          <td className="py-2 px-2 text-center font-mono text-slate-600">{item.balance.annualUsed}</td>
+                          <td className="py-2 px-2 text-center font-mono font-bold text-emerald-700 border-r border-slate-100">{item.annualRemaining}</td>
 
-                          {/* Casual Leave */}
-                          <td className="py-3 px-3 text-center font-mono">
-                            <div className={`font-bold ${isKoThantZin ? 'text-indigo-600' : 'text-slate-900'}`}>
-                              {item.casualRemaining} <span className="text-[10px] text-slate-400 font-normal">left</span>
-                            </div>
-                            <div className="text-[10px] text-slate-400">
-                              {item.balance.casualUsed} / {item.balance.casualTotal}d
-                            </div>
-                          </td>
+                          {/* Casual */}
+                          <td className="py-2 px-2 text-center font-mono text-slate-600">{item.balance.casualUsed}</td>
+                          <td className="py-2 px-2 text-center font-mono font-bold text-emerald-700 border-r border-slate-100">{item.casualRemaining}</td>
 
-                          {/* Medical Leave */}
-                          <td className="py-3 px-3 text-center font-mono">
-                            <div className="font-bold text-slate-900">
-                              {item.medicalRemaining} <span className="text-[10px] text-slate-400 font-normal">left</span>
-                            </div>
-                            <div className="text-[10px] text-slate-400">
-                              {item.balance.medicalUsed} / {item.balance.medicalTotal}d
-                            </div>
-                          </td>
+                          {/* Medical */}
+                          <td className="py-2 px-2 text-center font-mono text-slate-600">{item.balance.medicalUsed}</td>
+                          <td className="py-2 px-2 text-center font-mono font-bold text-emerald-700 border-r border-slate-100">{item.medicalRemaining}</td>
 
-                          {/* Total Entitled */}
-                          <td className="py-3 px-3 text-center font-mono font-medium text-slate-700">
-                            {item.totalEntitlement}d
-                          </td>
+                          {/* Maternity */}
+                          <td className="py-2 px-2 text-center font-mono text-slate-600">{item.maternityUsed}</td>
+                          <td className="py-2 px-2 text-center font-mono font-bold text-emerald-700 border-r border-slate-100">{item.maternityRemaining}</td>
 
-                          {/* Total Taken */}
-                          <td className="py-3 px-3 text-center font-mono font-bold text-indigo-700">
-                            {item.totalTaken}d
-                          </td>
+                          {/* Paternity */}
+                          <td className="py-2 px-2 text-center font-mono text-slate-600">{item.paternityUsed}</td>
+                          <td className="py-2 px-2 text-center font-mono font-bold text-emerald-700 border-r border-slate-100">{item.paternityRemaining}</td>
 
-                          {/* Total Remaining */}
-                          <td className="py-3 px-3 text-center font-mono font-bold text-emerald-700">
-                            {item.totalRemaining}d
-                          </td>
-
-                          {/* Utilization Bar */}
-                          <td className="py-3 px-4 text-center">
-                            <div className="w-24 mx-auto space-y-1">
-                              <div className="flex justify-between text-[10px] font-mono">
-                                <span>{item.utilizationRate}%</span>
-                                <span className="text-slate-400">{item.totalTaken}d</span>
-                              </div>
-                              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all ${
-                                    item.utilizationRate > 50
-                                      ? 'bg-amber-500'
-                                      : item.utilizationRate > 25
-                                      ? 'bg-indigo-500'
-                                      : 'bg-emerald-500'
-                                  }`}
-                                  style={{ width: `${Math.min(100, item.utilizationRate)}%` }}
-                                />
-                              </div>
-                            </div>
-                          </td>
+                          {/* Unpaid */}
+                          <td className="py-2 px-2 text-center font-mono text-slate-600">{item.unpaidUsed}</td>
+                          <td className="py-2 px-2 text-center font-mono font-bold text-emerald-700 border-r border-slate-100">{item.unpaidRemaining}</td>
 
                           {/* Requests status */}
-                          <td className="py-3 px-4 text-center">
+                          <td className="py-2.5 px-3 text-center border-r border-slate-100">
                             {item.pendingCount > 0 ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
                                 <Clock className="w-3 h-3" />
@@ -1763,23 +2269,22 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
-                                <Check className="w-3 h-3 text-emerald-600" />
-                                <span>{item.approvedCount} Approved</span>
+                                <CheckCircle className="w-3 h-3 text-emerald-600" />
+                                <span>{item.approvedCount} Done</span>
                               </span>
                             )}
                           </td>
 
-                          {/* Action Button */}
-                          <td className="py-3 px-4 text-right no-print">
+                          {/* Action */}
+                          <td className="py-2.5 px-3 text-right">
                             <button
                               onClick={() => {
                                 setDossierEmpId(item.employee.employeeId);
                                 setActiveTab('individualEmployee');
                               }}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors"
+                              className="px-2.5 py-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
                             >
-                              <span>View Dossier</span>
-                              <ChevronRight className="w-3.5 h-3.5" />
+                              View &rarr;
                             </button>
                           </td>
                         </tr>
@@ -1811,6 +2316,14 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  onClick={handlePrintAllDetailed}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-white hover:bg-indigo-50 border border-indigo-200 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                  title="Print all employee detailed leave report with dates on A4 format"
+                >
+                  <Printer className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>{language === 'my' ? 'ခွင့်မှတ်တမ်း A4 ပုံနှိပ်မည်' : 'Print Detailed Report (A4)'}</span>
+                </button>
                 <span className="text-xs text-slate-500 font-mono">
                   Showing {filteredLeaves.length} of {leaves.length} records
                 </span>
@@ -1840,22 +2353,14 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
                     </tr>
                   ) : (
                     filteredLeaves.map((leave) => {
-                      const isTomorrow = leave.startDate === '2026-10-09';
                       return (
                         <tr
                           key={leave.id}
-                          className={`hover:bg-slate-50/80 transition-colors ${
-                            isTomorrow && leave.status === 'approved' ? 'bg-emerald-50/30' : ''
-                          }`}
+                          className="hover:bg-slate-50/80 transition-colors"
                         >
                           <td className="py-3.5 px-4">
                             <div className="font-semibold text-slate-900 flex items-center gap-1.5">
                               <span>{leave.employeeName}</span>
-                              {leave.employeeName.toLowerCase().includes('thant zin') && isTomorrow && (
-                                <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-bold">
-                                  Approved for Tomorrow
-                                </span>
-                              )}
                             </div>
                             <div className="text-[11px] text-slate-400 font-mono">
                               {leave.employeeId} · {leave.department}
@@ -1987,6 +2492,14 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
               </select>
 
               <button
+                onClick={() => handlePrintIndividualDetailed(dossierEmpId)}
+                className="px-3 py-1.5 bg-white text-indigo-700 border border-indigo-200 rounded-xl text-xs font-semibold hover:bg-indigo-50 transition-colors flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer"
+                title="Print complete individual leave statement & history for this employee on A4 paper"
+              >
+                <Printer className="w-3.5 h-3.5 text-indigo-600" />
+                <span>{language === 'my' ? 'ခွင့်စာရင်း A4 ပုံနှိပ်မည်' : 'Print Statement (A4)'}</span>
+              </button>
+              <button
                 onClick={() => {
                   setFormApplicantEmpId(dossierEmpId);
                   setIsApplyModalOpen(true);
@@ -2100,7 +2613,7 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
 
             {/* 2. Casual Leave */}
             <div className={`p-4 bg-white rounded-xl border shadow-xs space-y-3 ${
-              dossierEmployee.name.toLowerCase().includes('thant zin') ? 'border-indigo-300 ring-2 ring-indigo-100' : 'border-slate-200'
+              'border-slate-200'
             }`}>
               <div className="flex items-center justify-between">
                 <span className="font-bold text-slate-900 text-xs">{t.casualLeave}</span>
@@ -2128,7 +2641,7 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
               <div className="flex justify-between text-[11px] text-slate-500">
                 <span className="font-semibold text-indigo-700">
                   {dossierEmployeeBalance.casualUsed} days taken
-                  {dossierEmployee.name.toLowerCase().includes('thant zin') && ' (incl. Tomorrow)'}
+                  
                 </span>
                 <span>Max 3 consecutive</span>
               </div>
@@ -2240,22 +2753,14 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
                     </tr>
                   ) : (
                     filteredDossierLeaves.map((leave) => {
-                      const isTomorrow = leave.startDate === '2026-10-09';
                       return (
                         <tr
                           key={leave.id}
-                          className={`hover:bg-slate-50/80 transition-colors ${
-                            isTomorrow ? 'bg-emerald-50/40' : ''
-                          }`}
+                          className="hover:bg-slate-50/80 transition-colors"
                         >
                           <td className="py-3.5 px-4 font-semibold text-slate-900 capitalize flex items-center gap-1.5">
                             <span className="w-2 h-2 rounded-full bg-indigo-500" />
                             <span>{leave.leaveType} Leave</span>
-                            {isTomorrow && (
-                              <span className="px-1.5 py-0.2 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                                Tomorrow (Approved)
-                              </span>
-                            )}
                           </td>
 
                           <td className="py-3.5 px-4 font-mono text-slate-700">
@@ -2623,7 +3128,7 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
                 </button>
 
                 <button
-                  onClick={handleDownloadPrintableHTML}
+                  onClick={() => handleDownloadPrintableHTML()}
                   className="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs border border-slate-200 rounded-lg shadow-2xs transition-colors cursor-pointer"
                   title="Download standalone A4 HTML file that auto-opens print dialog in any browser"
                 >
@@ -2650,40 +3155,85 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
                 </button>
               </div>
 
-              {/* Format Badge & Controls */}
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <div className="px-3 py-1 bg-white border border-indigo-200 text-indigo-800 rounded-lg font-bold flex items-center gap-1.5 shadow-2xs">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-                  <span>A4 Landscape (297 × 210 mm)</span>
-                </div>
-
-                <div className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg font-mono text-[11px] font-semibold flex items-center gap-1.5">
-                  <FileImage className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>All Employee Leave Balance Report.png</span>
-                </div>
-
-                {/* Scope selector */}
-                <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5">
+              {/* Report Type Selector & Controls */}
+              <div className="flex flex-wrap items-center gap-2.5 text-xs">
+                {/* 3 Dedicated Report Tabs */}
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
                   <button
-                    onClick={() => setPrintScope('all')}
-                    className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
-                      printScope === 'all'
-                        ? 'bg-slate-900 text-white'
+                    onClick={() => {
+                      setPrintReportType('all-summary');
+                      setPrintScope('all');
+                      setPrintOrientation('landscape');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                      printReportType === 'all-summary'
+                        ? 'bg-white text-indigo-950 shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    {language === 'my' ? 'အားလုံး (All Employees)' : 'All Employees'}
+                    <FileImage className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>1. Leave Balance Summary (A4 Landscape)</span>
                   </button>
+
                   <button
-                    onClick={() => setPrintScope('individual')}
-                    className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
-                      printScope === 'individual'
-                        ? 'bg-slate-900 text-white'
+                    onClick={() => {
+                      setPrintReportType('all-detailed');
+                      setPrintScope('all');
+                      setPrintOrientation('landscape');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                      printReportType === 'all-detailed'
+                        ? 'bg-white text-indigo-950 shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    {language === 'my' ? 'တစ်ဦးချင်း (Individual)' : 'Individual'}
+                    <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>2. All Employee Detail Report with Dates (A4 Landscape)</span>
                   </button>
+
+                  <button
+                    onClick={() => {
+                      setPrintReportType('individual-detailed');
+                      setPrintScope('individual');
+                      setPrintOrientation('portrait');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                      printReportType === 'individual-detailed'
+                        ? 'bg-white text-indigo-950 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <User className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>3. Each Employee Detail Report (A4 Portrait)</span>
+                  </button>
+                </div>
+
+                {/* When Individual is selected, show Employee dropdown */}
+                {printReportType === 'individual-detailed' && (
+                  <div className="flex items-center gap-1.5 bg-white border border-indigo-200 px-2 py-1 rounded-xl shadow-2xs">
+                    <span className="text-[11px] font-semibold text-indigo-950">Employee:</span>
+                    <select
+                      value={printSelectedEmpId}
+                      onChange={(e) => setPrintSelectedEmpId(e.target.value)}
+                      className="text-xs font-bold text-slate-800 bg-transparent border-none focus:outline-none cursor-pointer"
+                    >
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.employeeId}>
+                          {emp.name} ({emp.employeeId}) · {emp.department}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Paper Orientation Badge */}
+                <div className="px-2.5 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg font-mono text-[11px] font-semibold flex items-center gap-1.5 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>
+                    {printReportType === 'individual-detailed'
+                      ? 'A4 Portrait (210 × 297 mm)'
+                      : 'A4 Landscape (297 × 210 mm)'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -2708,66 +3258,410 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
             <div className="p-6 sm:p-8 bg-slate-200/80 overflow-y-auto flex-1">
               <div
                 id="printable-a4-sheet"
-                className="bg-white border border-slate-300 shadow-xl rounded-sm p-8 sm:p-10 max-w-[1060px] w-full mx-auto text-slate-800 font-sans"
+                className={`bg-white border border-slate-300 shadow-xl rounded-sm p-8 sm:p-10 mx-auto text-slate-800 font-sans ${
+                  printReportType === 'individual-detailed' ? 'max-w-[850px] w-full' : 'max-w-[1120px] w-full'
+                }`}
               >
-                {/* Official Header */}
+                {/* Official Report Header */}
                 <div className="border-b-2 border-slate-900 pb-3 mb-5 flex flex-wrap justify-between items-end gap-3">
                   <div>
                     <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                      All Employees Leave Balance Summary
+                      {printReportType === 'all-summary'
+                        ? 'All Employees Leave Balance Summary'
+                        : printReportType === 'all-detailed'
+                        ? 'All Employees Detailed Leave Applications & Dates Audit Report'
+                        : `Individual Employee Leave Dossier & Statement — ${printEmployee.name}`}
                     </h1>
                     <div className="text-sm font-bold text-indigo-950 mt-1">
-                      NexHR Enterprise · Statutory Leave Entitlement &amp; Balance Register
+                      {printReportType === 'all-summary'
+                        ? 'NexHR Enterprise · Statutory Leave Entitlement & Balance Register'
+                        : printReportType === 'all-detailed'
+                        ? 'NexHR Enterprise · Complete Statutory Leave Register With Detailed Dates & Approvals'
+                        : 'NexHR Enterprise · Comprehensive Statutory Leave Ledger, Balance Audit & Historical Date Log'}
                     </div>
                   </div>
                   <div className="text-right text-xs text-slate-600 space-y-0.5 font-mono">
                     <div><strong>Date:</strong> {new Date().toLocaleDateString('en-GB')} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                    <div><strong>Report Format:</strong> A4 Landscape (297 × 210 mm) / PNG</div>
-                    <div><strong>File Format:</strong> All Employee Leave Balance Report.png</div>
-                    <div><strong>Form No:</strong> NX-HR-LVE-2026 / Myanmar Leave &amp; Holidays Act 1951</div>
+                    <div><strong>Report Format:</strong> {printReportType === 'individual-detailed' ? 'A4 Portrait (210 × 297 mm)' : 'A4 Landscape (297 × 210 mm)'}</div>
+                    <div><strong>Form No:</strong> {printReportType === 'individual-detailed' ? 'NX-HR-IND-LVE-2026' : 'NX-HR-LVE-2026'} / Myanmar Leave &amp; Holidays Act 1951</div>
                   </div>
                 </div>
 
-                {/* All Employees Leave Balance Summary Table */}
-                <div className="mb-6 overflow-x-auto">
-                  <table className="w-full text-[11px] border-collapse border border-slate-300">
-                    <thead>
-                      <tr className="bg-slate-100 text-slate-700 text-left">
-                        <th className="border border-slate-300 px-2.5 py-2 font-bold">Emp ID</th>
-                        <th className="border border-slate-300 px-2.5 py-2 font-bold">Employee Name</th>
-                        <th className="border border-slate-300 px-2.5 py-2 font-bold">Dept</th>
-                        <th className="border border-slate-300 px-2.5 py-2 font-bold">Role / Designation</th>
-                        <th className="border border-slate-300 px-2.5 py-2 font-bold text-center">Annual Leave ({annualDays}d)</th>
-                        <th className="border border-slate-300 px-2.5 py-2 font-bold text-center">Casual Leave ({casualDays}d)</th>
-                        <th className="border border-slate-300 px-2.5 py-2 font-bold text-center">Medical Leave ({medicalDays}d)</th>
-                        <th className="border border-slate-300 px-2.5 py-2 font-bold text-center">Total Entitled</th>
-                        <th className="border border-slate-300 px-2.5 py-2 font-bold text-center">Total Taken</th>
-                        <th className="border border-slate-300 px-2.5 py-2 font-bold text-center">Remaining Balance</th>
-                        <th className="border border-slate-300 px-2.5 py-2 font-bold text-center">Utilization</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allEmployeesReportData.map((item) => (
-                        <tr key={item.employee.id} className="hover:bg-slate-50">
-                          <td className="border border-slate-300 px-2.5 py-1.5 font-mono">{item.employee.employeeId}</td>
-                          <td className="border border-slate-300 px-2.5 py-1.5 font-semibold text-slate-900">{item.employee.name}</td>
-                          <td className="border border-slate-300 px-2.5 py-1.5 text-slate-600">{item.employee.department}</td>
-                          <td className="border border-slate-300 px-2.5 py-1.5 text-slate-600">{item.employee.role}</td>
-                          <td className="border border-slate-300 px-2.5 py-1.5 text-center font-mono">{item.annualRemaining} left ({item.balance.annualUsed} used)</td>
-                          <td className="border border-slate-300 px-2.5 py-1.5 text-center font-mono">{item.casualRemaining} left ({item.balance.casualUsed} used)</td>
-                          <td className="border border-slate-300 px-2.5 py-1.5 text-center font-mono">{item.medicalRemaining} left ({item.balance.medicalUsed} used)</td>
-                          <td className="border border-slate-300 px-2.5 py-1.5 text-center font-mono font-medium">{item.totalEntitlement}d</td>
-                          <td className="border border-slate-300 px-2.5 py-1.5 text-center font-mono text-slate-600">{item.totalTaken}d</td>
-                          <td className="border border-slate-300 px-2.5 py-1.5 text-center font-bold text-emerald-700 font-mono">{item.totalRemaining}d</td>
-                          <td className="border border-slate-300 px-2.5 py-1.5 text-center font-mono">{item.utilizationRate}%</td>
+                {/* ============================================================== */}
+                {/* 1. REPORT VIEW 1: All Employees Leave Balance Summary (16 columns) */}
+                {/* ============================================================== */}
+                {printReportType === 'all-summary' && (
+                  <div className="mb-6 overflow-x-auto">
+                    <table className="w-full text-[11px] border-collapse border border-slate-300">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-800 text-left">
+                          <th rowSpan={2} className="border border-slate-300 px-2 py-1.5 font-bold">Employee ID</th>
+                          <th rowSpan={2} className="border border-slate-300 px-2 py-1.5 font-bold">Name</th>
+                          <th rowSpan={2} className="border border-slate-300 px-2 py-1.5 font-bold">Department</th>
+                          <th rowSpan={2} className="border border-slate-300 px-2 py-1.5 font-bold">Role</th>
+                          <th colSpan={2} className="border border-slate-300 px-2 py-1.5 font-bold text-center">Annual ({annualDays}d)</th>
+                          <th colSpan={2} className="border border-slate-300 px-2 py-1.5 font-bold text-center">Casual ({casualDays}d)</th>
+                          <th colSpan={2} className="border border-slate-300 px-2 py-1.5 font-bold text-center">Medical ({medicalDays}d)</th>
+                          <th colSpan={2} className="border border-slate-300 px-2 py-1.5 font-bold text-center">Statutory Maternity({maternityDays}d)</th>
+                          <th colSpan={2} className="border border-slate-300 px-2 py-1.5 font-bold text-center">Paternity Support ({paternityDays}d)</th>
+                          <th colSpan={2} className="border border-slate-300 px-2 py-1.5 font-bold text-center">Unpaid ({unpaidDays}d)</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                        <tr className="bg-slate-100 text-slate-700 text-center text-[10px]">
+                          <th className="border border-slate-300 px-1.5 py-1 font-semibold">Used</th>
+                          <th className="border border-slate-300 px-1.5 py-1 font-semibold">Left</th>
+                          <th className="border border-slate-300 px-1.5 py-1 font-semibold">Used</th>
+                          <th className="border border-slate-300 px-1.5 py-1 font-semibold">Left</th>
+                          <th className="border border-slate-300 px-1.5 py-1 font-semibold">Used</th>
+                          <th className="border border-slate-300 px-1.5 py-1 font-semibold">Left</th>
+                          <th className="border border-slate-300 px-1.5 py-1 font-semibold">Used</th>
+                          <th className="border border-slate-300 px-1.5 py-1 font-semibold">Left</th>
+                          <th className="border border-slate-300 px-1.5 py-1 font-semibold">Used</th>
+                          <th className="border border-slate-300 px-1.5 py-1 font-semibold">Left</th>
+                          <th className="border border-slate-300 px-1.5 py-1 font-semibold">Used</th>
+                          <th className="border border-slate-300 px-1.5 py-1 font-semibold">Left</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allEmployeesReportData.map((item) => (
+                          <tr key={item.employee.id} className="hover:bg-slate-50">
+                            <td className="border border-slate-300 px-2 py-1.5 font-mono text-[10.5px]">{item.employee.employeeId}</td>
+                            <td className="border border-slate-300 px-2 py-1.5 font-semibold text-slate-900">{item.employee.name}</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-slate-600">{item.employee.department}</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-slate-600">{item.employee.role}</td>
+                            <td className="border border-slate-300 px-1.5 py-1.5 text-center font-mono">{item.balance.annualUsed}</td>
+                            <td className="border border-slate-300 px-1.5 py-1.5 text-center font-mono font-bold text-emerald-700">{item.annualRemaining}</td>
+                            <td className="border border-slate-300 px-1.5 py-1.5 text-center font-mono">{item.balance.casualUsed}</td>
+                            <td className="border border-slate-300 px-1.5 py-1.5 text-center font-mono font-bold text-emerald-700">{item.casualRemaining}</td>
+                            <td className="border border-slate-300 px-1.5 py-1.5 text-center font-mono">{item.balance.medicalUsed}</td>
+                            <td className="border border-slate-300 px-1.5 py-1.5 text-center font-mono font-bold text-emerald-700">{item.medicalRemaining}</td>
+                            <td className="border border-slate-300 px-1.5 py-1.5 text-center font-mono">{item.maternityUsed}</td>
+                            <td className="border border-slate-300 px-1.5 py-1.5 text-center font-mono font-bold text-emerald-700">{item.maternityRemaining}</td>
+                            <td className="border border-slate-300 px-1.5 py-1.5 text-center font-mono">{item.paternityUsed}</td>
+                            <td className="border border-slate-300 px-1.5 py-1.5 text-center font-mono font-bold text-emerald-700">{item.paternityRemaining}</td>
+                            <td className="border border-slate-300 px-1.5 py-1.5 text-center font-mono">{item.unpaidUsed}</td>
+                            <td className="border border-slate-300 px-1.5 py-1.5 text-center font-mono font-bold text-emerald-700">{item.unpaidRemaining}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* ============================================================== */}
+                {/* 2. REPORT VIEW 2: All Employees Detailed Leave Report (With Dates) */}
+                {/* ============================================================== */}
+                {printReportType === 'all-detailed' && (
+                  <div className="mb-6 space-y-4">
+                    {/* Summary metrics header */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                      <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+                        <div className="text-[10px] text-slate-500 font-medium">Total Applications</div>
+                        <div className="text-base font-bold text-slate-900 font-mono mt-0.5">{leaves.length} records</div>
+                      </div>
+                      <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                        <div className="text-[10px] text-emerald-700 font-medium">Approved Leaves</div>
+                        <div className="text-base font-bold text-emerald-800 font-mono mt-0.5">
+                          {leaves.filter((l) => l.status === 'approved').length} requests ({leaves.filter((l) => l.status === 'approved').reduce((s, l) => s + l.daysCount, 0)}d)
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+                        <div className="text-[10px] text-amber-700 font-medium">Pending Review</div>
+                        <div className="text-base font-bold text-amber-800 font-mono mt-0.5">
+                          {leaves.filter((l) => l.status === 'pending').length} requests
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg">
+                        <div className="text-[10px] text-rose-700 font-medium">Rejected</div>
+                        <div className="text-base font-bold text-rose-800 font-mono mt-0.5">
+                          {leaves.filter((l) => l.status === 'rejected').length} requests
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Detailed Records Table with Dates */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[11px] border-collapse border border-slate-300">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-800 text-left font-bold">
+                            <th className="border border-slate-300 px-2 py-1.5 text-center w-8">#</th>
+                            <th className="border border-slate-300 px-2 py-1.5 w-20">Ref ID</th>
+                            <th className="border border-slate-300 px-2 py-1.5">Employee</th>
+                            <th className="border border-slate-300 px-2 py-1.5">Department</th>
+                            <th className="border border-slate-300 px-2 py-1.5">Leave Type</th>
+                            <th className="border border-slate-300 px-2 py-1.5 text-center font-bold text-slate-900">Start Date</th>
+                            <th className="border border-slate-300 px-2 py-1.5 text-center font-bold text-slate-900">End Date</th>
+                            <th className="border border-slate-300 px-2 py-1.5 text-center font-bold">Days</th>
+                            <th className="border border-slate-300 px-2 py-1.5 text-center">Applied Date</th>
+                            <th className="border border-slate-300 px-2 py-1.5">Reason &amp; Emergency Phone</th>
+                            <th className="border border-slate-300 px-2 py-1.5 text-center">Status</th>
+                            <th className="border border-slate-300 px-2 py-1.5">HR Approver &amp; Remarks</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {leaves.map((l, idx) => (
+                            <tr key={l.id} className="hover:bg-slate-50">
+                              <td className="border border-slate-300 px-2 py-1.5 text-center font-mono text-slate-500">{idx + 1}</td>
+                              <td className="border border-slate-300 px-2 py-1.5 font-mono font-bold text-slate-900 text-[10px]">{l.id}</td>
+                              <td className="border border-slate-300 px-2 py-1.5">
+                                <div className="font-bold text-slate-900">{l.employeeName}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">{l.employeeId}</div>
+                              </td>
+                              <td className="border border-slate-300 px-2 py-1.5 text-slate-600">{l.department}</td>
+                              <td className="border border-slate-300 px-2 py-1.5 font-semibold capitalize text-slate-800">{l.leaveType}</td>
+                              <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-slate-900">{l.startDate}</td>
+                              <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-slate-900">{l.endDate}</td>
+                              <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-slate-900">{l.daysCount}d</td>
+                              <td className="border border-slate-300 px-2 py-1.5 text-center font-mono text-slate-500 text-[10px]">{l.appliedDate}</td>
+                              <td className="border border-slate-300 px-2 py-1.5">
+                                <div className="text-slate-700 italic">"{l.reason}"</div>
+                                {l.emergencyPhone && (
+                                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">📞 {l.emergencyPhone}</div>
+                                )}
+                              </td>
+                              <td className="border border-slate-300 px-2 py-1.5 text-center">
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                    l.status === 'approved'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : l.status === 'rejected'
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : 'bg-amber-100 text-amber-800'
+                                  }`}
+                                >
+                                  {l.status}
+                                </span>
+                              </td>
+                              <td className="border border-slate-300 px-2 py-1.5 text-slate-700">
+                                {l.reviewedBy ? (
+                                  <div>
+                                    <div className="font-semibold text-slate-900">{l.reviewedBy}</div>
+                                    {l.managerComment && (
+                                      <div className="text-[10px] text-slate-500 italic mt-0.5">"{l.managerComment}"</div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 italic text-[10px]">Pending Review</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* ============================================================== */}
+                {/* 3. REPORT VIEW 3: Each Employee Detailed Statement (With Dates & Balances) */}
+                {/* ============================================================== */}
+                {printReportType === 'individual-detailed' && (
+                  <div className="mb-6 space-y-5">
+                    {/* Employee Profile Information Card */}
+                    <div className="bg-slate-50 border border-slate-300 rounded-xl p-4 grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-slate-500 font-medium">Employee Name:</span>
+                        <div className="text-base font-bold text-slate-900 mt-0.5">
+                          {printEmployee.name} {printEmployee.nameMyanmar && <span className="text-indigo-600 text-xs font-normal">({printEmployee.nameMyanmar})</span>}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 font-medium">Employee ID:</span>
+                        <div className="text-sm font-mono font-bold text-indigo-700 mt-0.5">{printEmployee.employeeId}</div>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 font-medium">Department &amp; Role:</span>
+                        <div className="font-semibold text-slate-800 mt-0.5">{printEmployee.department} · {printEmployee.role}</div>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 font-medium">Date of Joining:</span>
+                        <div className="font-mono text-slate-700 mt-0.5">{printEmployee.joinDate}</div>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 font-medium">NRC Number:</span>
+                        <div className="font-mono text-slate-700 mt-0.5">{printEmployee.nrcNumber}</div>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 font-medium">Reporting Manager:</span>
+                        <div className="font-semibold text-slate-800 mt-0.5">{printEmployee.reportingManager || 'Daw Khin Thuzar'}</div>
+                      </div>
+                    </div>
+
+                    {/* Section 1: Statutory Entitlement & Current Balance */}
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-2 border-l-2 border-indigo-600 pl-2">
+                        1. Statutory Leave Entitlement &amp; Current Balance Status
+                      </h3>
+                      <table className="w-full text-[11px] border-collapse border border-slate-300">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-800 text-left font-bold">
+                            <th className="border border-slate-300 px-2 py-1.5">Statutory Leave Type</th>
+                            <th className="border border-slate-300 px-2 py-1.5 text-center w-24">Entitlement</th>
+                            <th className="border border-slate-300 px-2 py-1.5 text-center w-24">Days Taken</th>
+                            <th className="border border-slate-300 px-2 py-1.5 text-center w-28">Remaining Balance</th>
+                            <th className="border border-slate-300 px-2 py-1.5">Labor Statute / Policy Rule</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="border border-slate-300 px-2 py-1.5 font-bold">Annual Leave</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">{annualDays} days</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">{printEmployeeBalance.annualUsed} days</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-emerald-700">
+                              {Math.max(0, printEmployeeBalance.annualTotal - printEmployeeBalance.annualUsed)} days
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-slate-500 text-[10px]">Myanmar Leave &amp; Holidays Act 1951, Section 4</td>
+                          </tr>
+                          <tr>
+                            <td className="border border-slate-300 px-2 py-1.5 font-bold">Casual Leave</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">{casualDays} days</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">{printEmployeeBalance.casualUsed} days</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-emerald-700">
+                              {Math.max(0, printEmployeeBalance.casualTotal - printEmployeeBalance.casualUsed)} days
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-slate-500 text-[10px]">Myanmar Leave &amp; Holidays Act 1951, Section 5</td>
+                          </tr>
+                          <tr>
+                            <td className="border border-slate-300 px-2 py-1.5 font-bold">Medical Leave</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">{medicalDays} days</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">{printEmployeeBalance.medicalUsed} days</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-emerald-700">
+                              {Math.max(0, printEmployeeBalance.medicalTotal - printEmployeeBalance.medicalUsed)} days
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-slate-500 text-[10px]">Myanmar Leave &amp; Holidays Act 1951, Section 6</td>
+                          </tr>
+                          <tr>
+                            <td className="border border-slate-300 px-2 py-1.5 font-bold">Statutory Maternity Leave</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">{maternityDays} days</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">{printEmployeeBalance.maternityUsed} days</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-emerald-700">
+                              {Math.max(0, printEmployeeBalance.maternityTotal - printEmployeeBalance.maternityUsed)} days
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-slate-500 text-[10px]">Social Security Law 2012 (Female staff)</td>
+                          </tr>
+                          <tr>
+                            <td className="border border-slate-300 px-2 py-1.5 font-bold">Paternity Support Leave</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">{paternityDays} days</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">
+                              {printEmployeeLeaves.filter((l) => l.leaveType === 'paternity' && l.status === 'approved').reduce((s, l) => s + l.daysCount, 0)} days
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-emerald-700">
+                              {Math.max(0, paternityDays - printEmployeeLeaves.filter((l) => l.leaveType === 'paternity' && l.status === 'approved').reduce((s, l) => s + l.daysCount, 0))} days
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-slate-500 text-[10px]">NexHR Family Support Policy</td>
+                          </tr>
+                          <tr>
+                            <td className="border border-slate-300 px-2 py-1.5 font-bold">Unpaid Leave</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">{unpaidDays} days</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">
+                              {printEmployeeLeaves.filter((l) => l.leaveType === 'unpaid' && l.status === 'approved').reduce((s, l) => s + l.daysCount, 0)} days
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-emerald-700">
+                              {Math.max(0, unpaidDays - printEmployeeLeaves.filter((l) => l.leaveType === 'unpaid' && l.status === 'approved').reduce((s, l) => s + l.daysCount, 0))} days
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-slate-500 text-[10px]">Company Discretionary Leave</td>
+                          </tr>
+                          <tr className="bg-indigo-50/50 font-bold">
+                            <td className="border border-slate-300 px-2 py-1.5 text-indigo-950">Total Paid Statutory Leave</td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono text-indigo-950">
+                              {printEmployeeBalance.annualTotal + printEmployeeBalance.casualTotal + printEmployeeBalance.medicalTotal} days
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono text-indigo-950">
+                              {printEmployeeBalance.annualUsed + printEmployeeBalance.casualUsed + printEmployeeBalance.medicalUsed} days
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-center font-mono text-emerald-800 text-xs">
+                              {Math.max(
+                                0,
+                                printEmployeeBalance.annualTotal +
+                                  printEmployeeBalance.casualTotal +
+                                  printEmployeeBalance.medicalTotal -
+                                  (printEmployeeBalance.annualUsed + printEmployeeBalance.casualUsed + printEmployeeBalance.medicalUsed)
+                              )} days
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1.5 text-slate-500 text-[10px]">Net annual statutory leave availability</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Section 2: Detailed Leave Application & History with Dates */}
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-2 border-l-2 border-indigo-600 pl-2">
+                        2. Detailed Leave Application &amp; Attendance History (With Full Dates)
+                      </h3>
+                      {printEmployeeLeaves.length === 0 ? (
+                        <div className="p-6 text-center text-slate-400 bg-slate-50 border border-dashed border-slate-200 rounded-lg text-xs">
+                          No historical leave applications recorded for this employee in the current calendar year.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-[11px] border-collapse border border-slate-300">
+                            <thead>
+                              <tr className="bg-slate-100 text-slate-800 text-left font-bold">
+                                <th className="border border-slate-300 px-2 py-1.5 w-20">Ref ID</th>
+                                <th className="border border-slate-300 px-2 py-1.5">Leave Type</th>
+                                <th className="border border-slate-300 px-2 py-1.5 text-center font-bold text-slate-900">Start Date</th>
+                                <th className="border border-slate-300 px-2 py-1.5 text-center font-bold text-slate-900">End Date</th>
+                                <th className="border border-slate-300 px-2 py-1.5 text-center font-bold">Days</th>
+                                <th className="border border-slate-300 px-2 py-1.5 text-center">Applied Date</th>
+                                <th className="border border-slate-300 px-2 py-1.5">Reason</th>
+                                <th className="border border-slate-300 px-2 py-1.5 text-center">Status</th>
+                                <th className="border border-slate-300 px-2 py-1.5">Approver &amp; Remarks</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {printEmployeeLeaves.map((l) => (
+                                <tr key={l.id} className="hover:bg-slate-50">
+                                  <td className="border border-slate-300 px-2 py-1.5 font-mono font-bold text-slate-900 text-[10px]">{l.id}</td>
+                                  <td className="border border-slate-300 px-2 py-1.5 font-bold capitalize text-slate-800">{l.leaveType}</td>
+                                  <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-slate-900">{l.startDate}</td>
+                                  <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-slate-900">{l.endDate}</td>
+                                  <td className="border border-slate-300 px-2 py-1.5 text-center font-mono font-bold text-slate-900">{l.daysCount}d</td>
+                                  <td className="border border-slate-300 px-2 py-1.5 text-center font-mono text-slate-500 text-[10px]">{l.appliedDate}</td>
+                                  <td className="border border-slate-300 px-2 py-1.5 italic text-slate-700">"{l.reason}"</td>
+                                  <td className="border border-slate-300 px-2 py-1.5 text-center">
+                                    <span
+                                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                        l.status === 'approved'
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : l.status === 'rejected'
+                                          ? 'bg-rose-100 text-rose-800'
+                                          : 'bg-amber-100 text-amber-800'
+                                      }`}
+                                    >
+                                      {l.status}
+                                    </span>
+                                  </td>
+                                  <td className="border border-slate-300 px-2 py-1.5 text-slate-700">
+                                    {l.reviewedBy ? (
+                                      <div>
+                                        <div className="font-semibold text-slate-900">{l.reviewedBy}</div>
+                                        {l.managerComment && (
+                                          <div className="text-[10px] text-slate-500 italic mt-0.5">"{l.managerComment}"</div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-slate-400 italic text-[10px]">Pending Review</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Sign-off Blocks */}
                 <div className="grid grid-cols-3 gap-6 pt-6 border-t border-slate-300 text-center text-xs text-slate-600">
+                  {printReportType === 'individual-detailed' && (
+                    <div className="border-t border-dashed border-slate-400 pt-2">
+                      <div className="font-bold text-slate-800">{printEmployee.name}</div>
+                      <div>Employee Signature</div>
+                      <div className="text-[10px] text-slate-400">Acknowledged &amp; Certified</div>
+                    </div>
+                  )}
                   <div className="border-t border-dashed border-slate-400 pt-2">
                     <div className="font-bold text-slate-800">Daw Khin Thuzar</div>
                     <div>HR Operations Manager</div>
@@ -2778,15 +3672,17 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
                     <div>Executive Director</div>
                     <div className="text-[10px] text-slate-400">Authorized &amp; Signed</div>
                   </div>
-                  <div className="border-t border-dashed border-slate-400 pt-2">
-                    <div className="font-bold text-slate-800">NexHR ERP Cloud</div>
-                    <div>Official System Stamp</div>
-                    <div className="text-[10px] text-slate-400 font-mono">NX-2026-CERTIFIED</div>
-                  </div>
+                  {printReportType !== 'individual-detailed' && (
+                    <div className="border-t border-dashed border-slate-400 pt-2">
+                      <div className="font-bold text-slate-800">NexHR ERP Cloud</div>
+                      <div>Official System Stamp</div>
+                      <div className="text-[10px] text-slate-400 font-mono">NX-2026-CERTIFIED</div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-6 pt-3 border-t border-slate-200 text-center text-[10px] text-slate-400 font-mono">
-                  Official Statutory Leave Ledger Record (A4 Landscape) · Confirmed under Myanmar Leave &amp; Holidays Act 1951
+                  Official Statutory Leave Ledger Record ({printReportType === 'individual-detailed' ? 'A4 Portrait' : 'A4 Landscape'}) · Confirmed under Myanmar Leave &amp; Holidays Act 1951
                 </div>
               </div>
             </div>
@@ -2803,6 +3699,15 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
                   className="px-4 py-2 font-semibold text-xs text-slate-600 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
                 >
                   Close
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportPNG}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-all active:scale-95 cursor-pointer"
+                  title="Download All Employee Leave Balance Report.png"
+                >
+                  <FileImage className="w-4 h-4" />
+                  <span>{language === 'my' ? 'PNG ထုတ်ယူမည် (.png)' : 'Export PNG (.png)'}</span>
                 </button>
                 <button
                   type="button"

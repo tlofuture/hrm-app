@@ -6,6 +6,7 @@ import {
   CandidateStage,
   OnboardingCase,
   AttendanceRecord,
+  AttendanceMethod,
   LeaveRequest,
   LeaveBalance,
   PayrollRecord,
@@ -180,12 +181,35 @@ export default function App() {
 
   // Modals
   const [isBiometricOpen, setIsBiometricOpen] = useState(false);
+  const [biometricMethod, setBiometricMethod] = useState<AttendanceMethod>('fingerprint');
+  const [biometricAction, setBiometricAction] = useState<'clock_in' | 'clock_out'>('clock_in');
   const [isEmailDrawerOpen, setIsEmailDrawerOpen] = useState(false);
   const [activePayslipModal, setActivePayslipModal] = useState<PayrollRecord | null>(null);
 
-  // Handler: Add Attendance from Biometric Terminal
+  // Handler: Add or Update Attendance from Biometric & Mobile Terminal
   const handleRecordAttendance = (newRecord: AttendanceRecord) => {
-    const updated = [newRecord, ...attendance];
+    // If clock-out is performed and an active clock-in exists for this employee today, update it
+    let updated: AttendanceRecord[];
+    const existingIndex = attendance.findIndex(
+      (a) => a.employeeId === newRecord.employeeId && a.date === newRecord.date && !a.clockOutTime
+    );
+
+    if (newRecord.clockOutTime && existingIndex !== -1) {
+      const existing = attendance[existingIndex];
+      const merged: AttendanceRecord = {
+        ...existing,
+        clockOutTime: newRecord.clockOutTime,
+        overtimeHours: newRecord.overtimeHours > 0 ? newRecord.overtimeHours : existing.overtimeHours,
+        method: newRecord.method,
+        location: newRecord.location,
+        biometricConfidence: newRecord.biometricConfidence,
+      };
+      updated = [...attendance];
+      updated[existingIndex] = merged;
+    } else {
+      updated = [newRecord, ...attendance];
+    }
+
     setAttendance(updated);
     StorageService.setAttendance(updated);
 
@@ -854,7 +878,12 @@ export default function App() {
               <AttendanceView
                 attendanceRecords={attendance}
                 employees={employees}
-                onOpenBiometric={() => setIsBiometricOpen(true)}
+                onOpenBiometric={(method, action, empId) => {
+                  if (method) setBiometricMethod(method);
+                  if (action) setBiometricAction(action);
+                  if (empId) setCurrentEmployeeId(empId);
+                  setIsBiometricOpen(true);
+                }}
                 language={language}
               />
             )}
@@ -1016,6 +1045,8 @@ export default function App() {
         onClose={() => setIsBiometricOpen(false)}
         employees={employees}
         selectedEmployeeId={currentEmployeeId}
+        defaultMethod={biometricMethod}
+        defaultAction={biometricAction}
         onRecordAttendance={handleRecordAttendance}
         language={language}
       />
