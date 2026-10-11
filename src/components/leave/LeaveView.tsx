@@ -994,71 +994,14 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
     reportType: 'all-summary' | 'all-detailed' | 'individual-detailed' = printReportType,
     targetEmpId: string = printSelectedEmpId
   ) => {
-    let printSucceeded = false;
-
-    // Method 1: Inject printable HTML into a hidden iframe and trigger native print dialog
-    try {
-      let printFrame = document.getElementById('a4-landscape-print-frame') as HTMLIFrameElement;
-      if (!printFrame) {
-        printFrame = document.createElement('iframe');
-        printFrame.id = 'a4-landscape-print-frame';
-        printFrame.style.position = 'fixed';
-        printFrame.style.right = '0';
-        printFrame.style.bottom = '0';
-        printFrame.style.width = '1px';
-        printFrame.style.height = '1px';
-        printFrame.style.opacity = '0.01';
-        printFrame.style.border = 'none';
-        printFrame.style.pointerEvents = 'none';
-        document.body.appendChild(printFrame);
-      }
-
-      const frameDoc = printFrame.contentDocument || printFrame.contentWindow?.document;
-      if (frameDoc) {
-        frameDoc.open();
-        frameDoc.write(generateA4PrintHTML(reportType, targetEmpId));
-        frameDoc.close();
-        printFrame.contentWindow?.focus();
-        printFrame.contentWindow?.print();
-        printSucceeded = true;
-      }
-    } catch (frameErr) {
-      console.warn('Iframe print failed (iframe sandbox):', frameErr);
-    }
-
-    // Method 2: Try window.print() directly in main window
-    if (!printSucceeded) {
-      try {
-        window.focus();
-        window.print();
-        printSucceeded = true;
-      } catch (winErr) {
-        console.warn('Direct window.print() failed:', winErr);
-      }
-    }
-
-    // Method 3: Fallback if browser/sandbox blocks interactive print dialogs
-    if (!printSucceeded) {
-      handleDownloadPrintableHTML(reportType, targetEmpId);
-      setPrintStatusNotice(
-        language === 'my'
-          ? 'Browser sandbox ကန့်သတ်ချက်ကြောင့် Printer Dialog တိုက်ရိုက်မပွင့်ပါ။ A4 HTML ဖိုင်ကို ဒေါင်းလုဒ်လုပ်ပေးထားပါသည် (ဖိုင်ဖွင့်လိုက်ပါက Windows Printer Dialog တန်းပွင့်ပါမည်) သို့မဟုတ် ကီးဘုတ်မှ Ctrl + P နှိပ်ပါ။'
-          : 'Windows Printer Dialog was triggered. If your browser restricts popups in this frame, the A4 HTML file was downloaded (open it to print immediately) or press Ctrl + P.'
-      );
-    } else {
-      const modeText =
-        reportType === 'all-summary'
-          ? 'All Employees Leave Balance Summary (A4 Landscape)'
-          : reportType === 'all-detailed'
-          ? 'All Employees Detailed Leave Report (A4 Landscape)'
-          : 'Each Employee Detailed Leave Statement (A4 Portrait)';
-
-      setPrintStatusNotice(
-        language === 'my'
-          ? `Windows Printer Dialog Box ကို ဖွင့်လှစ်ပြီးပါပြီ (${modeText})။`
-          : `Windows Printer Dialog Box opened in ${modeText}.`
-      );
-    }
+    setIsPrintModalOpen(true);
+    setPrintReportType(reportType);
+    setPrintSelectedEmpId(targetEmpId);
+    setPrintStatusNotice(
+      language === 'my'
+        ? 'A4 စာရွက်ပုံနှိပ်ရန် အောက်ပါ "Print to Windows Printer (A4)" ခလုတ်ကို နှိပ်ပါ (သို့မဟုတ် Ctrl + P နှိပ်ပါ)။'
+        : 'Click "Print to Windows Printer (A4)" below or press Ctrl + P for paper printout.'
+    );
   };
 
   // Print Handlers:
@@ -1069,9 +1012,6 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
     setPrintOrientation('landscape');
     setIsPrintModalOpen(true);
     setPrintStatusNotice(null);
-    setTimeout(() => {
-      triggerWindowsPrint('all-summary');
-    }, 120);
   };
 
   // 2. All Employees Detailed Leave Report with Dates (A4 Landscape)
@@ -1081,9 +1021,6 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
     setPrintOrientation('landscape');
     setIsPrintModalOpen(true);
     setPrintStatusNotice(null);
-    setTimeout(() => {
-      triggerWindowsPrint('all-detailed');
-    }, 120);
   };
 
   // 3. Each Employee Detailed Leave Dossier with Dates & Balances (A4 Portrait)
@@ -1095,9 +1032,6 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
     setPrintOrientation('portrait');
     setIsPrintModalOpen(true);
     setPrintStatusNotice(null);
-    setTimeout(() => {
-      triggerWindowsPrint('individual-detailed', target);
-    }, 120);
   };
 
   // Default Print Trigger
@@ -1111,7 +1045,42 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
 
   // Direct print attempt from inside the modal
   const handleDirectPrintNow = () => {
-    triggerWindowsPrint(printReportType, printSelectedEmpId);
+    // 1. Direct window.print() attempt (fires print dialog directly when not blocked by iframe)
+    try {
+      window.focus();
+      window.print();
+    } catch (err) {
+      console.warn('Direct window.print() failed:', err);
+    }
+
+    // 2. Open standalone print-ready document in a dedicated tab.
+    // In Chromium (Chrome/Edge), sandboxed iframes block window.print() dialogs ('Ignored call to print()').
+    // A popup/tab opened on user click is top-level (not in an iframe), so window.print() in that tab IMMEDIATELY launches the Windows Printer dialog!
+    try {
+      const html = generateA4PrintHTML(printReportType, printSelectedEmpId);
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const blobUrl = URL.createObjectURL(blob);
+      const printWin = window.open(blobUrl, '_blank');
+
+      if (printWin) {
+        setPrintStatusNotice(
+          language === 'my'
+            ? 'Windows Printer Dialog ကို ဖွင့်လှစ်ပြီးပါပြီ (A4 Landscape ပုံနှိပ်စက်စာမျက်နှာ)'
+            : 'Windows Printer Dialog opened (A4 Landscape paper printout ready in tab).'
+        );
+      } else {
+        // Fallback if browser blocked popup: trigger download of self-printing HTML file
+        handleDownloadPrintableHTML(printReportType, printSelectedEmpId);
+        setPrintStatusNotice(
+          language === 'my'
+            ? 'Windows ပုံနှိပ်စက်အတွက် A4 HTML ဖိုင်ကို ဒေါင်းလုဒ်လုပ်ပေးထားပါသည် (ဖိုင်ဖွင့်၍ ပုံနှိပ်ပါ) သို့မဟုတ် Ctrl + P နှိပ်ပါ။'
+            : 'Print file downloaded. Open file to print to Windows printer, or press Ctrl + P.'
+        );
+      }
+    } catch (openErr) {
+      console.warn('Could not open print window:', openErr);
+      handleDownloadPrintableHTML(printReportType, printSelectedEmpId);
+    }
   };
 
   // Download standalone self-printing A4 HTML document
@@ -1750,45 +1719,64 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
       <style>{`
         @media print {
           @page {
-            size: A4 landscape;
-            margin: 12mm 10mm;
+            size: ${printReportType === 'individual-detailed' ? 'A4 portrait' : 'A4 landscape'};
+            margin: 6mm 8mm;
           }
           body {
-            background: white !important;
-            color: #0f172a !important;
-            font-size: 11px !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            font-size: 10pt !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
           header, nav, aside, .no-print, button, input, select {
             display: none !important;
           }
-          .print-only {
-            display: block !important;
+          /* Hide everything except the printable A4 sheet */
+          body * {
+            visibility: hidden !important;
           }
-          .print-container {
+          #printable-a4-sheet,
+          #printable-a4-sheet * {
+            visibility: visible !important;
+          }
+          #printable-a4-sheet {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
             width: 100% !important;
+            max-width: 100% !important;
             margin: 0 !important;
-            padding: 0 !important;
+            padding: 4mm 6mm !important;
             box-shadow: none !important;
             border: none !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
-          table {
+          #printable-a4-sheet table {
             width: 100% !important;
             border-collapse: collapse !important;
+            page-break-inside: auto !important;
           }
-          th, td {
-            border: 1px solid #94a3b8 !important;
-            padding: 6px 8px !important;
-            font-size: 9pt !important;
+          #printable-a4-sheet tr {
+            page-break-inside: avoid !important;
+            page-break-after: auto !important;
           }
-          th {
+          #printable-a4-sheet thead {
+            display: table-header-group !important;
+          }
+          #printable-a4-sheet th,
+          #printable-a4-sheet td {
+            border: 1px solid #475569 !important;
+            color: #000000 !important;
+            font-size: 8.5pt !important;
+            padding: 3px 5px !important;
+          }
+          #printable-a4-sheet th {
             background-color: #f1f5f9 !important;
-            color: #0f172a !important;
             font-weight: 700 !important;
-          }
-        }
-        @media screen {
-          .print-only {
-            display: none !important;
           }
         }
       `}</style>
@@ -2038,117 +2026,53 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
             </div>
           </div>
 
-          {/* Executive Overview KPI Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
-            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs">
-              <div className="text-[11px] text-slate-500 font-medium uppercase tracking-wider">
-                Total Entitlement Pool
-              </div>
-              <div className="mt-2 text-2xl font-bold font-mono text-slate-900">
-                {executiveKPIs.totalEntitledSum} <span className="text-xs font-sans text-slate-500">days</span>
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500">
-                Across {executiveKPIs.totalStaff} permanent staff
-              </div>
-            </div>
-
-            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs">
-              <div className="text-[11px] text-slate-500 font-medium uppercase tracking-wider">
-                Total Days Taken
-              </div>
-              <div className="mt-2 text-2xl font-bold font-mono text-indigo-600">
-                {executiveKPIs.totalTakenSum} <span className="text-xs font-sans text-slate-500">days</span>
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500">
-                Approved leaves to date
-              </div>
-            </div>
-
-            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs">
-              <div className="text-[11px] text-slate-500 font-medium uppercase tracking-wider">
-                Total Days Remaining
-              </div>
-              <div className="mt-2 text-2xl font-bold font-mono text-emerald-600">
-                {executiveKPIs.totalRemainingSum} <span className="text-xs font-sans text-slate-500">days</span>
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500">
-                Available for staff utilization
-              </div>
-            </div>
-
-            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs">
-              <div className="text-[11px] text-slate-500 font-medium uppercase tracking-wider">
-                Utilization Rate
-              </div>
-              <div className="mt-2 text-2xl font-bold font-mono text-slate-900">
-                {executiveKPIs.overallRate}%
-              </div>
-              <div className="mt-1 flex items-center gap-1.5 text-[11px] text-emerald-600 font-medium">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Healthy Work-Life Ratio</span>
-              </div>
-            </div>
-
-            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs">
-              <div className="text-[11px] text-slate-500 font-medium uppercase tracking-wider">
-                Pending HR Review
-              </div>
-              <div className="mt-2 text-2xl font-bold font-mono text-amber-600">
-                {executiveKPIs.totalPendingRequests}
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500">
-                {executiveKPIs.totalApprovedRequests} already approved
-              </div>
-            </div>
-          </div>
-
           {/* Master Table Filter Bar */}
-          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs space-y-3">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="flex items-center gap-2 flex-1 max-w-md">
-                <div className="relative w-full">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search by Employee Name, ID, or Department..."
-                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:border-indigo-500"
-                  />
-                </div>
+          <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+              <Filter className="w-4 h-4 text-indigo-600" />
+              <span>{language === 'my' ? 'ဇယား စစ်ထုတ်မှုများ (Table Filters):' : 'Table Filters:'}</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-slate-500">{language === 'my' ? 'ဌာန:' : 'Department:'}</span>
+                <select
+                  value={reportDeptFilter}
+                  onChange={(e) => setReportDeptFilter(e.target.value)}
+                  className="p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:bg-white focus:border-indigo-500"
+                >
+                  <option value="all">{language === 'my' ? 'ဌာနအားလုံး' : 'All Departments'}</option>
+                  {departments.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2.5">
-                <div className="flex items-center gap-1.5 text-xs">
-                  <span className="text-slate-500">Department:</span>
-                  <select
-                    value={reportDeptFilter}
-                    onChange={(e) => setReportDeptFilter(e.target.value)}
-                    className="p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
-                  >
-                    <option value="all">All Departments</option>
-                    {departments.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-1.5 text-xs">
-                  <span className="text-slate-500">Utilization:</span>
-                  <select
-                    value={reportUsageFilter}
-                    onChange={(e) => setReportUsageFilter(e.target.value as any)}
-                    className="p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
-                  >
-                    <option value="all">All Usage Levels</option>
-                    <option value="high">High Usage (≥ 50%)</option>
-                    <option value="moderate">Moderate (20% – 49%)</option>
-                    <option value="low">Low Usage (&lt; 20%)</option>
-                  </select>
-                </div>
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-slate-500">{language === 'my' ? 'ခွင့်သုံးစွဲမှု:' : 'Utilization:'}</span>
+                <select
+                  value={reportUsageFilter}
+                  onChange={(e) => setReportUsageFilter(e.target.value as any)}
+                  className="p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:bg-white focus:border-indigo-500"
+                >
+                  <option value="all">{language === 'my' ? 'အားလုံး' : 'All Usage Levels'}</option>
+                  <option value="high">{language === 'my' ? 'သုံးစွဲမှုများ (≥ 50%)' : 'High Usage (≥ 50%)'}</option>
+                  <option value="moderate">{language === 'my' ? 'အလယ်အလတ် (20% – 49%)' : 'Moderate (20% – 49%)'}</option>
+                  <option value="low">{language === 'my' ? 'သုံးစွဲမှုနည်း (< 20%)' : 'Low Usage (< 20%)'}</option>
+                </select>
               </div>
+
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="px-2.5 py-1 text-[11px] font-medium text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/60 rounded-md transition-colors"
+                >
+                  Clear search: "{searchQuery}"
+                </button>
+              )}
             </div>
           </div>
 
@@ -2314,14 +2238,6 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  onClick={handlePrintAllDetailed}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-white hover:bg-indigo-50 border border-indigo-200 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                  title="Print all employee detailed leave report with dates on A4 format"
-                >
-                  <Printer className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>{language === 'my' ? 'ခွင့်မှတ်တမ်း A4 ပုံနှိပ်မည်' : 'Print Detailed Report (A4)'}</span>
-                </button>
                 <span className="text-xs text-slate-500 font-mono">
                   Showing {filteredLeaves.length} of {leaves.length} records
                 </span>
@@ -3105,6 +3021,7 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
               {/* Primary action buttons */}
               <div className="flex flex-wrap items-center gap-2">
                 <button
+                  type="button"
                   onClick={handleDirectPrintNow}
                   className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow-sm transition-all active:scale-95 cursor-pointer"
                   title="Open Windows Printer Dialog Box to print this A4 document"
@@ -3114,6 +3031,7 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
                 </button>
 
                 <button
+                  type="button"
                   onClick={handleExportPNG}
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm transition-all active:scale-95 cursor-pointer"
                   title="Download report in PNG file format ('All Employee Leave Balance Report.png')"
@@ -3123,6 +3041,7 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => handleDownloadPrintableHTML()}
                   className="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs border border-slate-200 rounded-lg shadow-2xs transition-colors cursor-pointer"
                   title="Download standalone A4 HTML file that auto-opens print dialog in any browser"
@@ -3694,6 +3613,15 @@ export const LeaveView: React.FC<LeaveViewProps> = ({
                   className="px-4 py-2 font-semibold text-xs text-slate-600 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
                 >
                   Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadPrintableHTML()}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 font-semibold text-xs text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                  title="Download standalone A4 HTML file that auto-opens Windows print dialog"
+                >
+                  <Download className="w-4 h-4 text-indigo-600" />
+                  <span>{language === 'my' ? 'A4 HTML' : 'Download A4 HTML'}</span>
                 </button>
                 <button
                   type="button"

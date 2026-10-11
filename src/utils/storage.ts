@@ -17,6 +17,7 @@ import {
   BiometricDeviceSetupItem,
   UserAccount,
   TursoDatabaseConfig,
+  AuditLog,
 } from '../types';
 import {
   INITIAL_EMPLOYEES,
@@ -36,6 +37,7 @@ import {
   INITIAL_POSITIONS,
   INITIAL_BIOMETRIC_DEVICES,
   INITIAL_USER_ACCOUNTS,
+  INITIAL_AUDIT_LOGS,
 } from '../data/mockData';
 import { getEmployeeAvatar } from './imageUtils';
 
@@ -70,6 +72,8 @@ const STORAGE_KEYS = {
   USER_ACCOUNTS: 'nexhr_user_accounts_v1',
   TURSO_CONFIG: 'nexhr_turso_config_v1',
   CURRENT_USER: 'nexhr_current_user_v1',
+  AUDIT_LOGS: 'nexhr_audit_logs_v1',
+  IS_AUTHENTICATED: 'nexhr_is_auth_v1',
 };
 
 function safeGet<T>(key: string, fallback: T): T {
@@ -190,6 +194,77 @@ export const StorageService = {
     };
   },
   setCurrentUser: (user: UserAccount) => safeSet(STORAGE_KEYS.CURRENT_USER, user),
+
+  getIsAuthenticated: (): boolean => {
+    try {
+      return sessionStorage.getItem('nexhr_session_authenticated') === 'true';
+    } catch {
+      return false;
+    }
+  },
+  setIsAuthenticated: (val: boolean) => {
+    try {
+      if (val) {
+        sessionStorage.setItem('nexhr_session_authenticated', 'true');
+      } else {
+        sessionStorage.removeItem('nexhr_session_authenticated');
+      }
+      localStorage.setItem(STORAGE_KEYS.IS_AUTHENTICATED, JSON.stringify(val));
+    } catch (e) {
+      console.error(e);
+    }
+  },
+
+  getAuditLogs: (): AuditLog[] => {
+    const list = safeGet<AuditLog[]>(STORAGE_KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
+    if (!list || list.length === 0) {
+      safeSet(STORAGE_KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
+      return INITIAL_AUDIT_LOGS;
+    }
+    return list;
+  },
+  setAuditLogs: (logs: AuditLog[]) => safeSet(STORAGE_KEYS.AUDIT_LOGS, logs),
+
+  addAuditLog: (entry: {
+    userId?: string;
+    userName?: string;
+    userRole?: UserAccount['role'];
+    userAvatar?: string;
+    action: AuditLog['action'];
+    module: AuditLog['module'];
+    description: string;
+    targetId?: string;
+    status?: 'success' | 'warning' | 'failure';
+    details?: Record<string, unknown>;
+  }): AuditLog => {
+    const logs = safeGet<AuditLog[]>(STORAGE_KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
+    const currentUser = StorageService.getCurrentUser();
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+    const newLog: AuditLog = {
+      id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp,
+      userId: entry.userId || currentUser.id,
+      userName: entry.userName || currentUser.fullName,
+      userRole: entry.userRole || currentUser.role,
+      userAvatar: entry.userAvatar || currentUser.avatar,
+      action: entry.action,
+      module: entry.module,
+      description: entry.description,
+      targetId: entry.targetId,
+      ipAddress: '192.168.1.' + (Math.floor(Math.random() * 80) + 10),
+      status: entry.status || 'success',
+      details: entry.details,
+    };
+
+    const updated = [newLog, ...logs].slice(0, 500); // retain last 500 logs
+    safeSet(STORAGE_KEYS.AUDIT_LOGS, updated);
+    return newLog;
+  },
+
+  clearAuditLogs: () => safeSet(STORAGE_KEYS.AUDIT_LOGS, []),
 
   addEmailNotification: (notification: Omit<EmailNotification, 'id' | 'sentAt' | 'status'>): EmailNotification => {
     const list = safeGet(STORAGE_KEYS.EMAILS, INITIAL_EMAILS);

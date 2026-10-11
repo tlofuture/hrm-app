@@ -22,6 +22,9 @@ import {
   SalarySetupConfig,
   PositionSetupItem,
   BiometricDeviceSetupItem,
+  AuditLog,
+  AuditActionType,
+  AuditModule,
 } from './types';
 import { StorageService } from './utils/storage';
 import { translations, formatMMK } from './utils/translations';
@@ -60,6 +63,8 @@ import { EmployeePortalView } from './components/ess/EmployeePortalView';
 import { EmployeeSetupPage } from './components/employee/EmployeeSetupPage';
 import { SetupMenuView } from './components/setup/SetupMenuView';
 import { MobileAppFrame } from './components/mobile/MobileAppFrame';
+import { LoginPage } from './components/auth/LoginPage';
+import { AuditLogsView } from './components/audit/AuditLogsView';
 import { FileText, Printer, X } from 'lucide-react';
 
 export default function App() {
@@ -91,6 +96,88 @@ export default function App() {
   const [currentEmployeeId, setCurrentEmployeeId] = useState<string>(
     () => StorageService.getCurrentUser().employeeId || 'NX-1002'
   );
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(StorageService.getIsAuthenticated);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(StorageService.getAuditLogs);
+
+  // Centralized Audit Action Logger
+  const logAction = (
+    action: AuditActionType,
+    module: AuditModule,
+    description: string,
+    targetId?: string,
+    status?: 'success' | 'warning' | 'failure',
+    details?: Record<string, unknown>
+  ) => {
+    StorageService.addAuditLog({
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      userAvatar: currentUser.avatar,
+      action,
+      module,
+      description,
+      targetId,
+      status: status || 'success',
+      details,
+    });
+    setAuditLogs(StorageService.getAuditLogs());
+  };
+
+  const handleLogin = (user: UserAccount) => {
+    setCurrentUser(user);
+    setCurrentRole(user.role);
+    if (user.employeeId) setCurrentEmployeeId(user.employeeId);
+    setIsAuthenticated(true);
+    StorageService.setCurrentUser(user);
+    StorageService.setIsAuthenticated(true);
+    StorageService.addAuditLog({
+      userId: user.id,
+      userName: user.fullName,
+      userRole: user.role,
+      userAvatar: user.avatar,
+      action: 'LOGIN',
+      module: 'Authentication',
+      description: `${user.fullName} (@${user.username}) authenticated into workspace`,
+      targetId: user.id,
+      status: 'success',
+      details: { role: user.role, department: user.department },
+    });
+    setAuditLogs(StorageService.getAuditLogs());
+  };
+
+  const handleLogout = () => {
+    StorageService.addAuditLog({
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      userAvatar: currentUser.avatar,
+      action: 'LOGOUT',
+      module: 'Authentication',
+      description: `${currentUser.fullName} signed out of current session`,
+      targetId: currentUser.id,
+      status: 'success',
+    });
+    setAuditLogs(StorageService.getAuditLogs());
+    setIsAuthenticated(false);
+    StorageService.setIsAuthenticated(false);
+  };
+
+  const handleClearAuditLogs = () => {
+    StorageService.clearAuditLogs();
+    setAuditLogs([]);
+    StorageService.addAuditLog({
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      userAvatar: currentUser.avatar,
+      action: 'DELETE',
+      module: 'Security',
+      description: `Audit log ledger was purged by ${currentUser.fullName}`,
+      targetId: currentUser.id,
+      status: 'warning',
+    });
+    setAuditLogs(StorageService.getAuditLogs());
+  };
 
   // App UI States
   const [language, setLanguage] = useState<Language>('en');
@@ -245,6 +332,16 @@ export default function App() {
       `,
     });
     setEmails(StorageService.getEmails());
+
+    // Record audit event
+    logAction(
+      'SCAN',
+      'Attendance',
+      `Biometric ${newRecord.clockOutTime ? 'clock-out' : 'clock-in'} verified for ${newRecord.employeeName} (${newRecord.method}, ${newRecord.biometricConfidence}% match)`,
+      newRecord.employeeId,
+      'success',
+      { method: newRecord.method, confidence: newRecord.biometricConfidence, terminal: newRecord.location }
+    );
   };
 
   // Handler: Disburse Payroll
@@ -256,6 +353,15 @@ export default function App() {
     }));
     setPayroll(updatedPayroll);
     StorageService.setPayroll(updatedPayroll);
+
+    logAction(
+      'DISBURSE',
+      'Payroll',
+      `Disbursed monthly payroll run for ${payroll.length} employees`,
+      'batch-payroll-run',
+      'success',
+      { count: payroll.length, date: new Date().toISOString().split('T')[0] }
+    );
 
     // Batch send automated payslips via email to every employee
     employees.forEach((emp) => {
@@ -329,6 +435,15 @@ export default function App() {
     }
 
     setEmails(StorageService.getEmails());
+
+    logAction(
+      'CREATE',
+      'Leave',
+      `Submitted ${created.leaveType.toUpperCase()} leave application (${created.daysCount} days: ${created.startDate} to ${created.endDate}) for ${created.employeeName}`,
+      created.id,
+      'success',
+      { leaveType: created.leaveType, days: created.daysCount, reason: created.reason }
+    );
   };
 
   // Handler: Review Leave
@@ -348,6 +463,14 @@ export default function App() {
 
     const leave = leaves.find((l) => l.id === leaveId);
     if (leave) {
+      logAction(
+        status === 'approved' ? 'APPROVE' : 'REJECT',
+        'Leave',
+        `${status === 'approved' ? 'Approved' : 'Rejected'} ${leave.leaveType} leave for ${leave.employeeName} (${leave.daysCount} days)`,
+        leaveId,
+        status === 'approved' ? 'success' : 'warning',
+        { comment, status, reviewer: 'Daw Khin Thuzar (HR)' }
+      );
       // Update leave balance if approved
       if (status === 'approved') {
         const balances = { ...leaveBalances };
@@ -446,10 +569,20 @@ export default function App() {
         console.warn('Background Turso employee sync:', err)
       );
     }
+
+    logAction(
+      exists ? 'UPDATE' : 'CREATE',
+      'Employees',
+      `${exists ? 'Updated' : 'Registered new'} employee profile for ${emp.name} (${emp.employeeId})`,
+      emp.employeeId,
+      'success',
+      { department: emp.department, role: emp.role, nrc: emp.nrcNumber, status: emp.status }
+    );
   };
 
   // Handler: Delete Employee
   const handleDeleteEmployee = (id: string) => {
+    const target = employees.find((e) => e.id === id);
     const updated = employees.filter((e) => e.id !== id);
     setEmployees(updated);
     StorageService.setEmployees(updated);
@@ -460,6 +593,14 @@ export default function App() {
         console.warn('Background Turso employee delete:', err)
       );
     }
+
+    logAction(
+      'DELETE',
+      'Employees',
+      `Deleted employee profile for ${target?.name || id} (${target?.employeeId || id})`,
+      id,
+      'warning'
+    );
   };
 
   // Handler: Select / Switch Active User Account
@@ -669,7 +810,7 @@ export default function App() {
         phone: '+95 9 799 000 111',
         nrcNumber: '12/DAGAMA(N)990011',
         joinDate: onbCase.startDate,
-        avatar: '/src/assets/images/avatar_lead_engineer_1791292472793.jpg',
+        avatar: '/images/avatar_lead_engineer_1791292472793.jpg',
         baseSalaryMMK: 3000000,
         status: 'active',
         bankAccount: {
@@ -750,6 +891,15 @@ export default function App() {
       });
       setEmails(StorageService.getEmails());
     }
+
+    logAction(
+      'CREATE',
+      'Appraisal',
+      `Submitted performance appraisal review for ${newApp.employeeName} (${newApp.cycle}) - Score: ${newApp.overallScore}/100`,
+      newApp.id,
+      'success',
+      { overallScore: newApp.overallScore, promotionRecommendation: newApp.promotionRecommendation, reviewer: newApp.reviewer }
+    );
   };
 
   // Handler: Trigger Test Email from drawer
@@ -775,6 +925,18 @@ export default function App() {
   const currentEmployee =
     employees.find((e) => e.employeeId === currentEmployeeId) || employees[0];
 
+  // If unauthenticated, show the dedicated corporate Login User Page
+  if (!isAuthenticated) {
+    return (
+      <LoginPage
+        userAccounts={userAccounts}
+        onLogin={handleLogin}
+        language={language}
+        onLanguageChange={setLanguage}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col">
       {/* Top Bar Contract compliant Header */}
@@ -794,6 +956,7 @@ export default function App() {
         userAccounts={userAccounts}
         onSelectUser={handleSelectUser}
         tursoConnected={tursoConfig.isConnected}
+        onLogout={handleLogout}
       />
 
       {/* Main View Area */}
@@ -934,6 +1097,15 @@ export default function App() {
                 onOpenBiometric={() => setIsBiometricOpen(true)}
                 onApplyLeave={() => setActiveTab('leave')}
                 onViewPayslip={(record) => setActivePayslipModal(record)}
+                language={language}
+              />
+            )}
+
+            {activeTab === 'audit' && (
+              <AuditLogsView
+                auditLogs={auditLogs}
+                onClearLogs={handleClearAuditLogs}
+                currentUser={currentUser}
                 language={language}
               />
             )}

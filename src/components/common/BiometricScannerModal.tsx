@@ -436,7 +436,7 @@ export const BiometricScannerModal: React.FC<BiometricScannerModalProps> = ({
                 ) : (
                   <div className="relative w-full h-full rounded-full overflow-hidden border-2 border-cyan-500/50 bg-slate-900 flex items-center justify-center">
                     <img
-                      src="/src/assets/images/biometric_retina_lens_1791292493616.jpg"
+                      src="/images/biometric_retina_lens_1791292493616.jpg"
                       alt="Biometric Iris Scan Reticle"
                       referrerPolicy="no-referrer"
                       onError={(e) => {

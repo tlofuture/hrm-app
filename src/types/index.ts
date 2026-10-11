@@ -378,3 +378,45 @@ export interface BiometricDeviceSetupItem {
   lastSyncTime: string;
 }
 
+export type AuditActionType =
+  | 'LOGIN'
+  | 'LOGOUT'
+  | 'CREATE'
+  | 'UPDATE'
+  | 'DELETE'
+  | 'APPROVE'
+  | 'REJECT'
+  | 'SCAN'
+  | 'DISBURSE'
+  | 'EXPORT'
+  | 'CONFIG_CHANGE';
+
+export type AuditModule =
+  | 'Authentication'
+  | 'Attendance'
+  | 'Leave'
+  | 'Payroll'
+  | 'Employees'
+  | 'Appraisal'
+  | 'Recruitment'
+  | 'Onboarding'
+  | 'Setup'
+  | 'Security';
+
+export interface AuditLog {
+  id: string;
+  timestamp: string; // "YYYY-MM-DD HH:mm:ss"
+  userId: string;
+  userName: string;
+  userRole: UserRole;
+  userAvatar?: string;
+  action: AuditActionType;
+  module: AuditModule;
+  description: string;
+  targetId?: string;
+  ipAddress: string;
+  status: 'success' | 'warning' | 'failure';
+  details?: Record<string, unknown>;
+}
+
+

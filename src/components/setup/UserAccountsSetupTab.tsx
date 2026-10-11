@@ -17,6 +17,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { UserAccount, UserRole, Employee } from '../../types';
+import { getEmployeeAvatar, handleAvatarError } from '../../utils/imageUtils';
 
 interface UserAccountsSetupTabProps {
   userAccounts: UserAccount[];
@@ -309,18 +310,13 @@ export const UserAccountsSetupTab: React.FC<UserAccountsSetupTabProps> = ({
                     <td className="py-3 px-4 font-mono font-medium text-slate-900">
                       <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs uppercase overflow-hidden border border-indigo-200 shrink-0">
-                          {user.avatar ? (
-                            <img
-                              src={user.avatar}
-                              alt={user.username}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                (e.target as HTMLElement).style.display = 'none';
-                              }}
-                            />
-                          ) : (
-                            user.username.slice(0, 2)
-                          )}
+                          <img
+                            src={getEmployeeAvatar(linkedEmp || { avatar: user.avatar, name: user.fullName })}
+                            alt={user.username}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover"
+                            onError={(e) => handleAvatarError(e, linkedEmp || { name: user.fullName })}
+                          />
                         </div>
                         <div>
                           <div className="font-bold text-slate-900">@{user.username}</div>

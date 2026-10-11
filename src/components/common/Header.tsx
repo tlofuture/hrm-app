@@ -21,6 +21,8 @@ import {
   Settings,
   Menu,
   X,
+  ShieldAlert,
+  LogOut,
 } from 'lucide-react';
 import { Language, UserRole, UserAccount } from '../../types';
 import { translations } from '../../utils/translations';
@@ -44,6 +46,7 @@ interface HeaderProps {
   tursoConnected?: boolean;
   onSyncFromTurso?: () => Promise<void>;
   isSyncingTurso?: boolean;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -64,6 +67,7 @@ export const Header: React.FC<HeaderProps> = ({
   tursoConnected = true,
   onSyncFromTurso,
   isSyncingTurso,
+  onLogout,
 }) => {
   const t = translations[language];
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -79,6 +83,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'leave', label: t.navLeave, icon: Calendar },
     { id: 'appraisal', label: t.navAppraisal, icon: Award },
     { id: 'ess', label: t.navSelfService, icon: User },
+    { id: 'audit', label: t.navAuditLogs || 'Audit Logs', icon: ShieldAlert },
     { id: 'setup', label: t.navSetup, icon: Settings },
   ];
 
@@ -301,17 +306,39 @@ export const Header: React.FC<HeaderProps> = ({
                     ))}
                   </div>
 
-                  <div className="border-t border-slate-100 mt-2 pt-1 px-1">
+                  <div className="border-t border-slate-100 mt-2 pt-1 px-1 space-y-0.5">
+                    <button
+                      onClick={() => {
+                        onSelectTab('audit');
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full px-2.5 py-1.5 text-left text-xs font-semibold text-slate-700 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>{language === 'my' ? 'စစ်ဆေးရေးမှတ်တမ်း (Audit Logs)' : 'Audit Logs & Trail'}</span>
+                    </button>
                     <button
                       onClick={() => {
                         onSelectTab('setup');
                         setIsUserMenuOpen(false);
                       }}
-                      className="w-full px-2.5 py-1.5 text-left text-xs font-semibold text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-1.5"
+                      className="w-full px-2.5 py-1.5 text-left text-xs font-semibold text-slate-700 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
                     >
-                      <Shield className="w-3.5 h-3.5" />
+                      <Shield className="w-3.5 h-3.5 text-indigo-500" />
                       <span>{language === 'my' ? 'အကောင့်များ စီမံခန့်ခွဲရန်' : 'User Accounts & Roles Setup'}</span>
                     </button>
+                    {onLogout && (
+                      <button
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          onLogout();
+                        }}
+                        className="w-full px-2.5 py-1.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1.5 border-t border-slate-100 pt-1.5 mt-1 cursor-pointer"
+                      >
+                        <LogOut className="w-3.5 h-3.5 text-red-500" />
+                        <span>{language === 'my' ? 'စနစ်မှ ထွက်မည် (Sign Out)' : 'Sign Out / Switch User'}</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               )}

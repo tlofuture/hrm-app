@@ -28,6 +28,7 @@ import {
 } from '../../types';
 import { translations, formatMMK } from '../../utils/translations';
 import { playBiometricSuccess, playBiometricAlert } from '../../utils/audio';
+import { getEmployeeAvatar, handleAvatarError } from '../../utils/imageUtils';
 
 interface EmployeePortalViewProps {
   employees: Employee[];
@@ -151,13 +152,10 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
       <div className="p-6 bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-center md:items-start gap-6">
         <div className="relative shrink-0">
           <img
-            src={currentEmployee.avatar}
+            src={getEmployeeAvatar(currentEmployee)}
             alt={currentEmployee.name}
             referrerPolicy="no-referrer"
-            onError={(e) => {
-              (e.target as HTMLImageElement).src =
-                'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(currentEmployee.name);
-            }}
+            onError={(e) => handleAvatarError(e, currentEmployee)}
             className="w-24 h-24 rounded-2xl object-cover border-2 border-indigo-100 shadow-sm bg-indigo-50"
           />
           <span className="absolute -bottom-1 -right-1 p-1 bg-emerald-500 text-white rounded-full ring-2 ring-white">

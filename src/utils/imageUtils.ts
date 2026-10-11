@@ -141,6 +141,23 @@ export function getEmployeeAvatar(emp?: {
   return FALLBACK_HEADSHOTS[seed % FALLBACK_HEADSHOTS.length];
 }
 
+// Fallback SVG avatar (clean corporate portrait avatar with gradient background, never initials)
+export const CORPORATE_FALLBACK_SVG =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+      <defs>
+        <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#4f46e5" />
+          <stop offset="100%" stop-color="#312e81" />
+        </linearGradient>
+      </defs>
+      <rect width="128" height="128" rx="64" fill="url(#bgGrad)"/>
+      <circle cx="64" cy="46" r="22" fill="#ffffff" fill-opacity="0.95"/>
+      <path d="M26 112 C30 84, 50 78, 64 78 C78 78, 98 84, 102 112 Z" fill="#ffffff" fill-opacity="0.95"/>
+    </svg>`
+  );
+
 /**
  * Handles image load errors gracefully by switching to a reliable high-res corporate portrait.
  */
@@ -149,19 +166,24 @@ export function handleAvatarError(
   emp?: { employeeId?: string; name?: string }
 ): void {
   const target = e.currentTarget;
-  if (target.dataset.triedFallback === 'true') {
-    return;
-  }
-  target.dataset.triedFallback = 'true';
+  const stage = Number(target.dataset.fallbackStage || '0');
 
   const empId = emp?.employeeId || '';
-  if (empId && DEFAULT_EMPLOYEE_AVATARS[empId]) {
-    target.src = DEFAULT_EMPLOYEE_AVATARS[empId];
-  } else {
-    const seed = (emp?.name || empId || 'avatar')
-      .split('')
-      .reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  const seed = (emp?.name || empId || 'avatar')
+    .split('')
+    .reduce((acc, c) => acc + c.charCodeAt(0), 0);
+
+  if (stage === 0) {
+    target.dataset.fallbackStage = '1';
+    // Stage 1: Try corporate Unsplash CDN headshot
     target.src = FALLBACK_HEADSHOTS[seed % FALLBACK_HEADSHOTS.length];
+  } else if (stage === 1) {
+    target.dataset.fallbackStage = '2';
+    // Stage 2: Try alternate CDN headshot
+    target.src = FALLBACK_HEADSHOTS[(seed + 1) % FALLBACK_HEADSHOTS.length];
+  } else {
+    // Stage 3: Bulletproof embedded SVG vector portrait (100% works offline & on Vercel)
+    target.src = CORPORATE_FALLBACK_SVG;
   }
 }
 

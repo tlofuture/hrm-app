@@ -34,6 +34,7 @@ export const translations = {
     navEmailLog: 'Automated Email Queue',
     navSetup: 'Setup & Settings',
     navEmployees: 'Employee Directory & Setup',
+    navAuditLogs: 'Audit Logs & Security',
 
     // Employee Setup Page
     employeeSetupTitle: 'Employee Master Directory & Information Setup',
@@ -226,6 +227,7 @@ export const translations = {
     navEmailLog: 'အီးမေးလ်ပေးပို့မှု မှတ်တမ်း',
     navSetup: 'အခြေခံသတ်မှတ်ချက်များ (Setup)',
     navEmployees: 'ဝန်ထမ်းစာရင်းနှင့် အချက်အလက် (Employee Setup)',
+    navAuditLogs: 'စစ်ဆေးရေးနှင့် လုံခြုံရေးမှတ်တမ်း (Audit Logs)',
 
     // Employee Setup Page
     employeeSetupTitle: 'ဝန်ထမ်း အချက်အလက် အပြည့်အစုံ စီမံခန့်ခွဲခြင်း (Employee Setup)',

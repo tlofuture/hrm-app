@@ -32,6 +32,7 @@ import {
   AppraisalRecord,
 } from '../../types';
 import { translations, formatMMK } from '../../utils/translations';
+import { getEmployeeAvatar, handleAvatarError } from '../../utils/imageUtils';
 
 interface MobileAppFrameProps {
   currentEmployee: Employee;
@@ -165,13 +166,10 @@ export const MobileAppFrame: React.FC<MobileAppFrameProps> = ({
           <div className="px-5 py-3 bg-white border-b border-slate-100 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2.5">
               <img
-                src={currentEmployee.avatar}
+                src={getEmployeeAvatar(currentEmployee)}
                 alt={currentEmployee.name}
                 referrerPolicy="no-referrer"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src =
-                    'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(currentEmployee.name);
-                }}
+                onError={(e) => handleAvatarError(e, currentEmployee)}
                 className="w-9 h-9 rounded-full object-cover border border-indigo-200 bg-indigo-50"
               />
               <div>
